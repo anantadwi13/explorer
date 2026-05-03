@@ -3,6 +3,7 @@
   flex-direction: column;
   gap: 16px;
   min-height: 100%;
+  padding-top: var(--content-pad);
 }
 
 .file-head {

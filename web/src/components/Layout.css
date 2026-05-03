@@ -95,7 +95,7 @@
 .content {
   flex: 1;
   overflow: auto;
-  padding: var(--content-pad);
+  padding: 0 var(--content-pad) var(--content-pad);
   min-width: 0;
 }
 
@@ -175,5 +175,5 @@
     background: rgba(0, 0, 0, 0.4);
     z-index: 9;
   }
-  .content { padding: 14px; }
+  .content { padding: 0 14px 14px; }
 }
