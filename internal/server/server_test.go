@@ -37,6 +37,10 @@ func makeTestRoot(t *testing.T) string {
 	os.WriteFile(filepath.Join(root, "binary.bin"), []byte{0xFF, 0xFE, 0x00, 0x01}, 0600)
 	// Archive — extTable maps .zip to application/zip (non-previewable)
 	os.WriteFile(filepath.Join(root, "release.zip"), []byte("PK\x03\x04not-a-real-zip"), 0600)
+	// New language extensions for integration tests
+	os.WriteFile(filepath.Join(root, "Main.kt"), []byte("fun main() {}"), 0600)
+	os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"name":"test"}`), 0600)
+	os.WriteFile(filepath.Join(root, "service.proto"), []byte("syntax = \"proto3\";"), 0600)
 
 	return root
 }
@@ -284,6 +288,38 @@ func TestTreeReturnsKind(t *testing.T) {
 		}
 		if gotKind != wantKind {
 			t.Errorf("entry %q: want kind=%q, got %q", name, wantKind, gotKind)
+		}
+	}
+}
+
+// TestMetaNewLanguageExtensions verifies that new language extensions return
+// kind="text" and a text/ MIME from /api/meta.
+func TestMetaNewLanguageExtensions(t *testing.T) {
+	srv, _ := newTestServer(t)
+	cases := []struct {
+		file     string
+		wantMIME string
+	}{
+		{"Main.kt", "text/x-kotlin"},
+		{"package.json", "text/json"},
+		{"service.proto", "text/x-protobuf"},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/api/meta?path="+tc.file, nil)
+		w := httptest.NewRecorder()
+		srv.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("%s: expected 200, got %d", tc.file, w.Code)
+			continue
+		}
+		var resp map[string]interface{}
+		json.NewDecoder(w.Body).Decode(&resp)
+		if resp["kind"] != "text" {
+			t.Errorf("%s: expected kind=text, got %v", tc.file, resp["kind"])
+		}
+		mime, _ := resp["mime"].(string)
+		if !strings.HasPrefix(mime, tc.wantMIME) {
+			t.Errorf("%s: expected mime prefix %q, got %q", tc.file, tc.wantMIME, mime)
 		}
 	}
 }

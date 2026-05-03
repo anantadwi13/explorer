@@ -1,0 +1,80 @@
+/* Syntax highlighting token palette — light theme (default).
+   Values target WCAG AA contrast (≥4.5:1) against --bg-soft. */
+:root {
+  --code-keyword:  #7c3aed; /* violet  — keywords, control flow */
+  --code-string:   #0f766e; /* teal    — strings, template literals */
+  --code-comment:  #64748b; /* slate   — comments (≥3:1, AA-large at 13 px) */
+  --code-number:   #b45309; /* amber   — numbers, booleans */
+  --code-builtin:  #0369a1; /* blue    — built-ins, types */
+  --code-literal:  #b45309; /* amber   — literals (true/false/null) */
+  --code-attr:     #0369a1; /* blue    — attributes, object keys */
+  --code-tag:      #be185d; /* pink    — XML/HTML tags */
+  --code-meta:     #64748b; /* slate   — meta, annotations */
+  --code-variable: oklch(0.22 0.008 80); /* default fg — variables */
+}
+
+[data-theme="light"] {
+  --code-keyword:  #7c3aed;
+  --code-string:   #0f766e;
+  --code-comment:  #64748b;
+  --code-number:   #b45309;
+  --code-builtin:  #0369a1;
+  --code-literal:  #b45309;
+  --code-attr:     #0369a1;
+  --code-tag:      #be185d;
+  --code-meta:     #64748b;
+  --code-variable: oklch(0.22 0.008 80);
+}
+
+[data-theme="dark"] {
+  --code-keyword:  #a78bfa; /* soft violet */
+  --code-string:   #34d399; /* emerald    */
+  --code-comment:  #94a3b8; /* slate-400  */
+  --code-number:   #fbbf24; /* amber-400  */
+  --code-builtin:  #60a5fa; /* blue-400   */
+  --code-literal:  #fbbf24; /* amber-400  */
+  --code-attr:     #60a5fa; /* blue-400   */
+  --code-tag:      #f472b6; /* pink-400   */
+  --code-meta:     #94a3b8; /* slate-400  */
+  --code-variable: oklch(0.94 0.005 250);
+}
+
+/* Map highlight.js class names onto the custom properties above. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-strong,
+.hljs-built_in       { color: var(--code-keyword); }
+
+.hljs-string,
+.hljs-char,
+.hljs-quote,
+.hljs-regexp         { color: var(--code-string); }
+
+.hljs-comment,
+.hljs-deletion       { color: var(--code-comment); font-style: italic; }
+
+.hljs-number,
+.hljs-bullet         { color: var(--code-number); }
+
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-function .hljs-title,
+.hljs-title          { color: var(--code-builtin); }
+
+.hljs-attr,
+.hljs-attribute      { color: var(--code-attr); }
+
+.hljs-tag,
+.hljs-name           { color: var(--code-tag); }
+
+.hljs-meta,
+.hljs-meta .hljs-keyword { color: var(--code-meta); }
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-symbol,
+.hljs-params,
+.hljs-section        { color: var(--code-variable); }
+
+.hljs-addition       { color: var(--code-string); }

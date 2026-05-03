@@ -1,10 +1,31 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import rehypeSanitize from 'rehype-sanitize'
+import rehypeHighlight from 'rehype-highlight'
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
 import type { Plugin } from 'unified'
 import type { Root } from 'hast'
 import { visit } from 'unist-util-visit'
+import { languages } from './syntax/grammars'
 import './MarkdownRenderer.css'
+
+// Extend the default sanitize schema to allow hljs-* class names on <code>
+// and <span> (added by rehype-highlight), while stripping everything else.
+const syntaxSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    // Allow `hljs` and `hljs-*` classes on <code> in addition to language-*.
+    code: [
+      ...(defaultSchema.attributes?.code ?? []),
+      ['className', 'hljs', /^hljs(-[a-z_]+)*$/],
+    ],
+    // Allow hljs-* token classes on the <span> elements injected by the highlighter.
+    span: [
+      ...(defaultSchema.attributes?.span ?? []),
+      ['className', /^hljs(-[a-z_]+)*$/],
+    ],
+  },
+}
 
 interface Props {
   content: string
@@ -47,7 +68,11 @@ export default function MarkdownRenderer({ content, currentPath }: Props) {
     <div className="md-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rewritePlugin, rehypeSanitize]}
+        rehypePlugins={[
+          rewritePlugin,
+          [rehypeHighlight, { detect: false, languages }],
+          [rehypeSanitize, syntaxSchema],
+        ]}
       >
         {content}
       </ReactMarkdown>

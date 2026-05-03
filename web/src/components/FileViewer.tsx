@@ -6,6 +6,8 @@ import type { MetaResponse, ApiError, TreeEntry } from '../api/types'
 import { useLayout } from './LayoutContext'
 import { iconForFile } from './iconForFile'
 import MarkdownRenderer from './MarkdownRenderer'
+import CodeBlock from './CodeBlock'
+import { extToLanguage } from './syntax/grammars'
 import { formatSize, formatDate } from './format'
 import { BackIcon, LinkIcon, DownloadIcon } from './icons'
 import './FileViewer.css'
@@ -145,7 +147,9 @@ export default function FileViewer({ path }: Props) {
         {meta.kind === 'markdown' && (
           <MarkdownRenderer content={content!} currentPath={path} />
         )}
-        {meta.kind === 'text' && <pre className="text-body">{content}</pre>}
+        {meta.kind === 'text' && (
+          <CodeBlock code={content!} language={extToLanguage(path)} />
+        )}
         {meta.kind === 'image' && (
           <img src={`/raw/${path}`} alt={filename} />
         )}

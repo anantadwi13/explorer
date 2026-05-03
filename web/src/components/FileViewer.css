@@ -76,15 +76,25 @@
   border-radius: var(--radius-lg);
   display: block;
 }
-.text-body {
+.text-body,
+.code-block {
   margin: 0;
   padding: 24px 28px;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
-  overflow-x: auto;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
   color: var(--fg);
+}
+.code-block code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
 }
 
 .vw-fallback {

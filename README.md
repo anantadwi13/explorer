@@ -82,9 +82,11 @@ explorer . --host 0.0.0.0
 
 When `--host` is not a loopback address, the startup banner prints a warning:
 
+**Output:**
 ```
+explorer (playground build — no auth, no audit; do not expose publicly)
 explorer serving /home/alice/docs
-  → http://0.0.0.0:8080   (also reachable on your LAN)
+  → http://0.0.0.0:8080
   ⚠ host is not loopback — anyone on this network can read these files.
 ```
 
@@ -98,7 +100,7 @@ explorer serving /home/alice/docs
 ## Features
 
 - Serves any local directory over HTTP as a read-only browser
-- Embedded React SPA: markdown rendering (GFM), text viewer, inline images, download button for everything else
+- Embedded React SPA: markdown rendering (GFM), syntax-highlighted text viewer for 35+ languages (Go, TypeScript, Python, Kotlin, Swift, Rust, JSON, TOML, and more), inline images, download button for everything else
 - Mobile-first responsive layout; desktop shows a persistent tree sidebar
 - Deep-linkable URLs for every folder and file
 - Light / dark / system theme toggle
@@ -135,7 +137,7 @@ These are intentionally deferred:
 
 - File watcher / live reload
 - Search across files
-- Syntax highlighting for code
+- ~~Syntax highlighting for code~~ ✓ shipped — Go, TypeScript, Python, Kotlin, Swift, Rust, and 35+ more languages plus JSON/TOML/GraphQL/Protobuf; see `web/src/components/syntax/grammars.ts` for the full list
 - README auto-render in folder listings
 - Tree pagination per folder
 - Authentication / multi-user
