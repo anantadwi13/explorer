@@ -1,0 +1,12 @@
+services:
+  explorer:
+    build: .
+    ports:
+      - "18080:8080"
+    volumes:
+      - .:/data:ro
+    # IMPORTANT: inside the container, --host MUST be 0.0.0.0 (not the default 127.0.0.1).
+    # With the default loopback address, the server only listens on the container's
+    # internal loopback interface, so Docker's port mapping cannot reach it — the
+    # host gets "connection refused" with no obvious cause.
+    command: ["/data", "--host", "0.0.0.0", "--port", "8080"]

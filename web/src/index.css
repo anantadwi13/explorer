@@ -1,0 +1,85 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+:root {
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  --sidebar-width: 280px;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-subtle: #f6f8fa;
+  --bg-hover: #f0f2f5;
+  --border: #d0d7de;
+  --text: #1f2328;
+  --text-muted: #636c76;
+  --text-link: #0969da;
+  --text-link-hover: #0550ae;
+  --icon-dir: #54aeff;
+  --icon-file: #8c959f;
+  --header-bg: #f6f8fa;
+  --header-border: #d0d7de;
+  --btn-bg: #f6f8fa;
+  --btn-border: #d0d7de;
+  --btn-text: #24292f;
+  --btn-hover-bg: #eaeef2;
+  --code-bg: #f6f8fa;
+}
+
+[data-theme="dark"] {
+  --bg: #0d1117;
+  --bg-subtle: #161b22;
+  --bg-hover: #1c2128;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-link: #58a6ff;
+  --text-link-hover: #79c0ff;
+  --icon-dir: #54aeff;
+  --icon-file: #8b949e;
+  --header-bg: #161b22;
+  --header-border: #30363d;
+  --btn-bg: #21262d;
+  --btn-border: #30363d;
+  --btn-text: #c9d1d9;
+  --btn-hover-bg: #30363d;
+  --code-bg: #161b22;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--text-link);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--text-link-hover);
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--text-link);
+  outline-offset: 2px;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}

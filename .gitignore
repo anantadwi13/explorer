@@ -1,0 +1,19 @@
+# Go build output
+/explorer
+*.exe
+*.test
+*.out
+
+# Web dependencies and build output
+web/node_modules/
+internal/server/ui/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

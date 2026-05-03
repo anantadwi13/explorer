@@ -1,0 +1,56 @@
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeSanitize from 'rehype-sanitize'
+import type { Plugin } from 'unified'
+import type { Root } from 'hast'
+import { visit } from 'unist-util-visit'
+import './MarkdownRenderer.css'
+
+interface Props {
+  content: string
+  currentPath: string
+}
+
+function makeRewritePlugin(currentPath: string): Plugin<[], Root> {
+  const currentDir = currentPath.includes('/')
+    ? currentPath.substring(0, currentPath.lastIndexOf('/'))
+    : ''
+
+  function isAbsolute(url: string): boolean {
+    return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(url) || url.startsWith('/')
+  }
+
+  function rewrite(url: string, type: 'raw' | 'view'): string {
+    if (!url || isAbsolute(url)) return url
+    // Strip leading ./ so paths like ./img.png become img.png before joining
+    const clean = url.replace(/^\.\//, '')
+    const resolved = currentDir ? `${currentDir}/${clean}` : clean
+    return type === 'raw' ? `/raw/${resolved}` : `/view/${resolved}`
+  }
+
+  return () => (tree: Root) => {
+    visit(tree, 'element', node => {
+      if (node.tagName === 'img' && node.properties?.src) {
+        node.properties.src = rewrite(String(node.properties.src), 'raw')
+      }
+      if (node.tagName === 'a' && node.properties?.href) {
+        node.properties.href = rewrite(String(node.properties.href), 'view')
+      }
+    })
+  }
+}
+
+export default function MarkdownRenderer({ content, currentPath }: Props) {
+  const rewritePlugin = makeRewritePlugin(currentPath)
+
+  return (
+    <div className="markdown-body">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rewritePlugin, rehypeSanitize]}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}

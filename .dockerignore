@@ -1,0 +1,8 @@
+web/node_modules/
+internal/server/ui/dist/
+explorer
+*.exe
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

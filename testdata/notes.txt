@@ -1,0 +1,6 @@
+This is a plain text file.
+It exercises the text renderer.
+
+Long line to test wrapping on mobile: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+End of notes.

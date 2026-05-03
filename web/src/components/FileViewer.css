@@ -1,0 +1,132 @@
+.viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.viewer-filename {
+  font-weight: 600;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.viewer-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viewer-meta-sep {
+  opacity: 0.5;
+}
+
+.viewer-content {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Pre-formatted text */
+.viewer-pre {
+  margin: 0;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--code-bg);
+  color: var(--text);
+  min-height: 100%;
+}
+
+/* Image */
+.viewer-image-wrap {
+  padding: 16px;
+  display: flex;
+  justify-content: center;
+}
+
+.viewer-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+/* Non-previewable placeholder */
+.viewer-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  gap: 12px;
+}
+
+.placeholder-icon {
+  font-size: 48px;
+}
+
+.placeholder-filename {
+  font-weight: 600;
+  font-size: 16px;
+  word-break: break-all;
+}
+
+.placeholder-message {
+  color: var(--text-muted);
+  max-width: 360px;
+}
+
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  min-height: 44px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  color: var(--btn-text);
+  font-weight: 500;
+  text-decoration: none;
+}
+.btn-download:hover {
+  background: var(--btn-hover-bg);
+  color: var(--text);
+  text-decoration: none;
+}
+
+/* State messages */
+.viewer-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.viewer-error {
+  color: #cf222e;
+}
+[data-theme="dark"] .viewer-error {
+  color: #ff7b72;
+}
+
+.viewer-error strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 16px;
+}

@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  Tech stack:
+  - Go stdlib HTTP server (no external router; net/http ServeMux)
+  - React + TypeScript + Vite SPA, embedded into the Go binary via embed.FS
+  - SPA output goes to internal/server/ui/dist/ (Vite outDir configured accordingly)
+  - react-markdown + remark-gfm + rehype-sanitize for GFM rendering
+  - react-router-dom for client-side routing (/view/* paths)
+
+  Architecture:
+  - Single static binary: `go build ./cmd/explorer` embeds the SPA
+  - internal/server/resolver: path-traversal + symlink containment (all endpoints share this)
+  - internal/server/mime: extension-first MIME detection, falls back to http.DetectContentType
+  - internal/server/ui: embed.FS wrapper for the Vite build output
+  - All JSON errors follow {error: "<kind>", message: "..."} shape with typed HTTP status codes
+
+  Conventions:
+  - Flags parsed with flag.NewFlagSet; positional <dir> can appear before or after flags
+  - inlineSizeCap (5 MiB) is a named constant in internal/server/api.go
+  - CSS uses CSS custom properties keyed on [data-theme="light"|"dark"] (no Tailwind)
+  - Touch targets min 44px; no hover-only affordances; semantic landmarks (<nav>, <main>)
+  - Theme stored in localStorage["explorer.theme"]; applied before React mounts via inline script in index.html
+  - Tree sidebar shown only at ≥768px (md breakpoint); below that one view at a time
+  - Tree lazy-loads one folder level at a time; each folder caches children after first expand
+
+  Build:
+  - `make build` runs `cd web && npm ci && npm run build` then `go build`
+  - `make test` runs `go test ./cmd/... ./internal/...` (excludes web/node_modules)
+  - Dockerfile: node:lts-alpine → golang:1.24-alpine → gcr.io/distroless/static-debian12:nonroot
+
+  Security boundary:
+  - Served root is resolved once at startup via filepath.EvalSymlinks + filepath.Abs
+  - Every request path is cleaned, checked for ".." and absolute paths, joined to root, EvalSymlinks'd, and containment-checked before any file open
+  - Out-of-root symlinks are rejected (outside_root error, HTTP 400)

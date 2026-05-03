@@ -1,0 +1,102 @@
+.markdown-body {
+  padding: 24px;
+  max-width: 800px;
+  line-height: 1.7;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.markdown-body h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.markdown-body h3 { font-size: 1.25em; }
+
+.markdown-body p { margin-top: 0; margin-bottom: 12px; }
+
+.markdown-body code {
+  font-family: var(--font-mono);
+  font-size: 85%;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.markdown-body pre {
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 16px;
+  overflow: auto;
+  margin-bottom: 16px;
+}
+
+.markdown-body pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.markdown-body blockquote {
+  margin: 0 0 16px;
+  padding: 0 16px;
+  border-left: 4px solid var(--border);
+  color: var(--text-muted);
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+}
+
+.markdown-body th {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 24px;
+  margin-bottom: 12px;
+}
+
+.markdown-body li { margin-bottom: 4px; }
+
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-body a {
+  color: var(--text-link);
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+
+/* GFM task lists */
+.markdown-body input[type="checkbox"] {
+  margin-right: 6px;
+}
