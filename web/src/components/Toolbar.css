@@ -1,0 +1,19 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel);
+  flex-wrap: wrap;
+}
+.toolbar-spacer { flex: 1; }
+
+@media (max-width: 800px) {
+  .toolbar {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .toolbar .search { width: 100%; order: 10; }
+  .toolbar-spacer { display: none; }
+}

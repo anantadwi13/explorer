@@ -1,46 +1,43 @@
-.breadcrumbs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.crumbs {
   display: flex;
   align-items: center;
+  gap: 2px;
   flex-wrap: wrap;
-  gap: 2px;
+  min-width: 0;
+}
+.crumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--fg-muted);
   font-size: 13px;
-  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  font: inherit;
+  font-size: 13px;
 }
-
-.breadcrumbs li {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.breadcrumbs a {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--text-link);
-  min-height: 28px;
-  padding: 2px 4px;
-  border-radius: 4px;
-}
-.breadcrumbs a:hover {
-  background: var(--bg-hover);
+.crumb-item:hover:not(.is-current) {
+  background: var(--hover);
+  color: var(--fg);
   text-decoration: none;
 }
-
-.breadcrumb-sep {
-  color: var(--text-muted);
-  padding: 0 2px;
-}
-
-.breadcrumb-current {
-  color: var(--text);
+.crumb-item.is-current {
+  color: var(--fg);
   font-weight: 500;
-  padding: 2px 4px;
+  cursor: default;
+}
+.crumb-sep {
+  display: grid;
+  place-items: center;
+  color: var(--fg-faint);
+  width: 14px;
+  height: 14px;
 }
 
-.breadcrumb-root {
-  font-size: 13px;
+@media (max-width: 800px) {
+  .crumb-item { font-size: 12px; padding: 4px 6px; }
 }

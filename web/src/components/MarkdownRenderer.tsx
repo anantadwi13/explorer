@@ -44,7 +44,7 @@ export default function MarkdownRenderer({ content, currentPath }: Props) {
   const rewritePlugin = makeRewritePlugin(currentPath)
 
   return (
-    <div className="markdown-body">
+    <div className="md-body">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rewritePlugin, rehypeSanitize]}

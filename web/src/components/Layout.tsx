@@ -1,84 +1,183 @@
-import { Outlet, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { LayoutContext } from './LayoutContext'
 import { useTheme } from '../hooks/useTheme'
-import type { ThemeChoice } from '../hooks/useTheme'
-import Breadcrumbs from './Breadcrumbs'
-import TreeSidebar from './TreeSidebar'
+import { useDensity } from '../hooks/useDensity'
+import { LayoutSidebar } from './LayoutSidebar'
+import Toolbar from './Toolbar'
+import Toast from './Toast'
+import { MenuIcon, SunIcon, MoonIcon } from './icons'
 import './Layout.css'
 
+const DESKTOP_QUERY = '(min-width: 800px)'
+
 export default function Layout() {
-  const { choice, setChoice } = useTheme()
   const location = useLocation()
-  const [isMd, setIsMd] = useState(() => window.innerWidth >= 768)
+  const navigate = useNavigate()
+  const { choice: themeChoice, setChoice: setThemeChoice } = useTheme()
+  // density hook self-applies to <html>; we don't need the value here
+  useDensity()
+
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia(DESKTOP_QUERY).matches,
+  )
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [isFileRoute, setIsFileRoute] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<number | null>(null)
+  const searchRef = useRef<HTMLInputElement | null>(null)
+
+  // Track the last pathname we rendered for so we can reset path-scoped state
+  // (search filter, mobile drawer) when the route changes. This is the React-
+  // blessed "store information from previous renders" pattern — preferable to
+  // doing it in an effect, which would run after the wrong children rendered.
+  const [lastPathname, setLastPathname] = useState(location.pathname)
+  if (lastPathname !== location.pathname) {
+    setLastPathname(location.pathname)
+    setSearch('')
+    setSidebarOpen(false)
+  }
 
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 768px)')
-    const handler = (e: MediaQueryListEvent) => setIsMd(e.matches)
+    const mq = window.matchMedia(DESKTOP_QUERY)
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
     mq.addEventListener('change', handler)
-    setIsMd(mq.matches)
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  const currentPath = getCurrentPath(location.pathname)
+  const showToast = useCallback((message: string, ms = 1800) => {
+    setToast(message)
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToast(null), ms)
+  }, [])
+
+  useEffect(() => () => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+  }, [])
+
+  const closeSidebar = useCallback(() => setSidebarOpen(false), [])
+
+  // Keep refs of the values the keyboard handler needs so we can register the
+  // listener once and always read fresh state inside it.
+  const searchValueRef = useRef(search)
+  const isFileRouteRef = useRef(isFileRoute)
+  useEffect(() => {
+    searchValueRef.current = search
+    isFileRouteRef.current = isFileRoute
+  })
+
+  // Keyboard shortcuts (window-level). Single listener installed at mount.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tgt = e.target as HTMLElement | null
+      const inField =
+        !!tgt &&
+        (tgt.tagName === 'INPUT' ||
+          tgt.tagName === 'TEXTAREA' ||
+          tgt.isContentEditable)
+
+      if (e.key === '/' && !inField) {
+        if (searchRef.current) {
+          e.preventDefault()
+          searchRef.current.focus()
+        }
+      } else if (e.key === 'Escape') {
+        if (searchValueRef.current) {
+          setSearch('')
+        } else if (isFileRouteRef.current) {
+          goUpFromCurrent()
+        }
+      } else if (e.key === 'Backspace' && !inField && !isFileRouteRef.current) {
+        const p = currentPath(window.location.pathname)
+        if (p) {
+          e.preventDefault()
+          goUpFromCurrent()
+        }
+      }
+    }
+    const goUpFromCurrent = () => {
+      const path = currentPath(window.location.pathname)
+      if (!path) return
+      const parts = path.split('/').filter(Boolean)
+      parts.pop()
+      const next = parts.length === 0 ? '/' : `/view/${parts.join('/')}/`
+      navigate(next)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigate])
+
+  const ctxValue = useMemo(
+    () => ({
+      search,
+      setSearch,
+      searchRef,
+      isFileRoute,
+      showToast,
+      closeSidebar,
+    }),
+    [search, isFileRoute, showToast, closeSidebar],
+  )
+
+  // Outlet child (ViewPage) reports whether the current route is a file
+  // via this callback. Memoized so its identity is stable.
+  const onRouteKind = useCallback((kind: 'folder' | 'file') => {
+    setIsFileRoute(kind === 'file')
+  }, [])
 
   return (
-    <div className="layout">
-      <header className="layout-header" role="banner">
-        <div className="layout-header-left">
-          <a href="/" className="layout-logo" aria-label="Explorer home">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-              <path d="M2 4a2 2 0 012-2h3l2 2h7a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4z" fill="currentColor" opacity="0.8"/>
-            </svg>
-            <span>Explorer</span>
-          </a>
-        </div>
-        <div className="layout-header-right">
-          <ThemeToggle choice={choice} onChange={setChoice} />
-        </div>
-      </header>
-
-      <nav className="layout-breadcrumbs" aria-label="Breadcrumb">
-        <Breadcrumbs path={currentPath} />
-      </nav>
-
-      <div className="layout-body">
-        {isMd && (
-          <aside className="layout-sidebar" aria-label="File tree">
-            <TreeSidebar />
-          </aside>
+    <LayoutContext.Provider value={ctxValue}>
+      <div className="app">
+        {!isDesktop && (
+          <header className="topbar">
+            <button
+              className="icon-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open folders"
+            >
+              <MenuIcon />
+            </button>
+            <div className="topbar-title">Explorer</div>
+            <button
+              className="icon-btn"
+              onClick={() =>
+                setThemeChoice(themeChoice === 'dark' ? 'light' : 'dark')
+              }
+              aria-label="Toggle theme"
+            >
+              {themeChoice === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </button>
+          </header>
         )}
-        <main className="layout-main">
-          <Outlet />
+
+        <LayoutSidebar
+          isOpen={sidebarOpen || isDesktop}
+          isMobileDrawer={!isDesktop}
+          onClose={closeSidebar}
+        />
+
+        {!isDesktop && sidebarOpen && (
+          <div className="scrim" onClick={closeSidebar} aria-hidden="true" />
+        )}
+
+        <main className="main">
+          <Toolbar />
+          <div className="content">
+            <Outlet context={{ onRouteKind }} />
+          </div>
         </main>
+
+        {toast && <Toast message={toast} />}
       </div>
-    </div>
+    </LayoutContext.Provider>
   )
 }
 
-function getCurrentPath(pathname: string): string {
+function currentPath(pathname: string): string {
   if (pathname === '/') return ''
-  if (pathname.startsWith('/view/')) return pathname.slice('/view/'.length).replace(/\/$/, '')
+  if (pathname.startsWith('/view/')) {
+    return pathname.slice('/view/'.length).replace(/\/$/, '')
+  }
   return ''
-}
-
-function ThemeToggle({ choice, onChange }: { choice: ThemeChoice; onChange: (c: ThemeChoice) => void }) {
-  const options: { value: ThemeChoice; label: string }[] = [
-    { value: 'light', label: 'Light' },
-    { value: 'dark', label: 'Dark' },
-    { value: 'system', label: 'System' },
-  ]
-  return (
-    <div className="theme-toggle" role="group" aria-label="Theme">
-      {options.map(o => (
-        <button
-          key={o.value}
-          className={`theme-btn${choice === o.value ? ' active' : ''}`}
-          onClick={() => onChange(o.value)}
-          aria-pressed={choice === o.value}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
 }
