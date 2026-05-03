@@ -1,0 +1,9 @@
+{
+  "name": "record-demo-gif",
+  "private": true,
+  "type": "module",
+  "description": "Tooling for the record-demo-gif Claude skill (CDP client).",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

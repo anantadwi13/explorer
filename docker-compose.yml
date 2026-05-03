@@ -2,7 +2,7 @@ services:
   explorer:
     build: .
     ports:
-      - "18080:8080"
+      - "8080:8080"
     volumes:
       - .:/data:ro
     # IMPORTANT: inside the container, --host MUST be 0.0.0.0 (not the default 127.0.0.1).

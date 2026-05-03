@@ -4,9 +4,13 @@
 *.test
 *.out
 
-# Web dependencies and build output
+# Web dependencies (SPA build output `internal/server/ui/dist/` is committed
+# so `go install` / `go run` from the module path produces a working binary)
 web/node_modules/
-internal/server/ui/dist/
+
+# Skill-local node_modules (record-demo-gif's CDP client uses `ws`)
+.claude/skills/*/node_modules/
+.claude/skills/*/package-lock.json
 
 # IDE
 .idea/

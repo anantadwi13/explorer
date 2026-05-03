@@ -35,6 +35,8 @@ The dev workflow is two-process: `make dev-server` (Go on :8080) + `make dev-web
 
 The React SPA builds to `internal/server/ui/dist/` (configured in `web/vite.config.ts` via `outDir: '../internal/server/ui/dist'`). `internal/server/ui/ui.go` does `//go:embed all:dist` to bake it into the Go binary. The static handler (`internal/server/static.go`) serves exact file matches and falls back to `index.html` for SPA client-routes.
 
+`internal/server/ui/dist/` is committed to source control so module-proxy installs (`go install` / `go run github.com/anantadwi13/explorer/cmd/explorer@latest`) produce a working binary without Node. **Any change under `web/src/` requires running `make web-commit` (or `make web` + `git add internal/server/ui/dist`) in the same commit** so the embedded SPA stays in sync with the source.
+
 ### Path-traversal containment is the security boundary
 
 **Every** path-accepting endpoint (`/api/tree`, `/api/file`, `/raw/*`) flows through `internal/server/resolver.Resolver.Resolve`. The served root is resolved once at startup (`filepath.EvalSymlinks` + `filepath.Abs` in `cmd/explorer/main.go`). Per-request, `Resolve` cleans the input, rejects `..`/absolute paths, joins to root, `EvalSymlinks` the result, and verifies prefix-containment under the root before any file open. Symlinks pointing outside the root return `ErrOutsideRoot` (HTTP 400) and are silently dropped from `/api/tree` listings — see `TestTreeOutsideRootSymlinkDropped`. Don't add a new endpoint that touches the filesystem without going through the resolver.

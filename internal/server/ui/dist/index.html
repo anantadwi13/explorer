@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Explorer</title>
+    <!-- Apply theme + density before React mounts to avoid flash of wrong theme/density -->
+    <script>
+      (function () {
+        var storedTheme = localStorage.getItem('explorer.theme');
+        var theme;
+        if (storedTheme === 'light' || storedTheme === 'dark') {
+          theme = storedTheme;
+        } else {
+          theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+
+        var storedDensity = localStorage.getItem('explorer.density');
+        var density = (storedDensity === 'compact' || storedDensity === 'comfy' || storedDensity === 'regular')
+          ? storedDensity : 'regular';
+        document.documentElement.setAttribute('data-density', density);
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-DqBudESm.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DpxaDamt.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

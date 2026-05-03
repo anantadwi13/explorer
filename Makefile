@@ -1,8 +1,12 @@
-.PHONY: web build dev-web dev-server run clean test docker
+.PHONY: web web-commit build dev-web dev-server run clean test docker
 
 # Build the React SPA (outputs to internal/server/ui/dist/)
 web:
 	cd web && npm ci && npm run build
+
+# Rebuild the embedded SPA and stage it. Run this before committing any change under web/src/.
+web-commit:
+	cd web && npm run build && cd .. && git add internal/server/ui/dist
 
 # Build the full Go binary (runs web first to embed the SPA)
 build: web
