@@ -14,10 +14,14 @@ import (
 	"github.com/anantadwi13/explorer/internal/server"
 )
 
+const playgroundBanner = "explorer (playground build — no auth, no audit; do not expose publicly)"
+
 func main() {
 	fs := flag.NewFlagSet("explorer", flag.ContinueOnError)
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: explorer <dir> [--port PORT] [--host HOST]")
+		fmt.Fprintln(os.Stderr, "  Playground tool — no auth, no security audit. Bind to loopback")
+		fmt.Fprintln(os.Stderr, "  unless you trust your network.")
 		fs.PrintDefaults()
 	}
 
@@ -76,6 +80,7 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	url := fmt.Sprintf("http://%s:%d", *host, *port)
 
+	fmt.Println(playgroundBanner)
 	fmt.Printf("explorer serving %s\n", absRoot)
 	fmt.Printf("  → %s\n", url)
 	if !isLoopback(*host) {

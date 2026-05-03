@@ -4,13 +4,17 @@
 
 The `explorer` binary SHALL accept a single positional argument naming the directory to serve (the "served root") and SHALL accept optional flags `--port` and `--host`. The default `--port` SHALL be `8080`. The default `--host` SHALL be `127.0.0.1`. Invocation without a directory argument or with a path that is not an existing readable directory SHALL fail with a non-zero exit code and a message on stderr.
 
+The same invocation contract SHALL apply when the binary is executed via the Go toolchain using the module path `github.com/anantadwi13/explorer/cmd/explorer`, including `go run github.com/anantadwi13/explorer/cmd/explorer@latest <dir> [flags...]` and the binary produced by `go install github.com/anantadwi13/explorer/cmd/explorer@latest`.
+
 The binary SHALL print, as the first line of stdout on every successful startup (regardless of `--host` value), the exact playground banner line:
 
 ```
 explorer (playground build — no auth, no audit; do not expose publicly)
 ```
 
-The `--help` (and any usage-error) output SHALL include, immediately after the `Usage:` line and before the flag defaults, the exact two-line footer:
+When the existing non-loopback warning is emitted (because `--host` is not `127.0.0.1`, `::1`, or `localhost`), the playground banner SHALL appear strictly before the non-loopback warning. The non-loopback warning text and position relative to the served-root and URL lines SHALL NOT change.
+
+The `--help` (and any usage-error) output SHALL include, immediately after the `Usage:` line and before the flag defaults, the exact two-line footer (each line indented with two leading spaces):
 
 ```
   Playground tool — no auth, no security audit. Bind to loopback
@@ -58,5 +62,17 @@ The `--help` (and any usage-error) output SHALL include, immediately after the `
 
 - **WHEN** the user runs `explorer --help`
 - **THEN** the usage output contains the `Usage: explorer <dir> [--port PORT] [--host HOST]` line
-- **AND** the line immediately after begins with `Playground tool — no auth, no security audit.`
+- **AND** the line immediately after begins with `  Playground tool — no auth, no security audit.`
 - **AND** the flag defaults are printed below the footer
+
+#### Scenario: Invoke via `go run` from the module path
+
+- **WHEN** the user has a Go 1.24+ toolchain and runs `go run github.com/anantadwi13/explorer/cmd/explorer@latest /some/dir`
+- **THEN** the Go toolchain fetches the module, compiles the binary, and executes it with `/some/dir` as the served root
+- **AND** the running server behaves identically to the `./explorer /some/dir` invocation, including binding defaults, the playground banner as the first line of stdout, the startup banner, and SPA assets served at `/`
+
+#### Scenario: Install via `go install` from the module path
+
+- **WHEN** the user has a Go 1.24+ toolchain and runs `go install github.com/anantadwi13/explorer/cmd/explorer@latest`
+- **THEN** the Go toolchain produces an `explorer` binary in `$GOBIN` (or `$GOPATH/bin`)
+- **AND** running that binary against any readable directory serves the SPA and JSON API exactly as the `make build` output would, and prints the playground banner as the first line of stdout

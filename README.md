@@ -3,6 +3,13 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/anantadwi13/explorer)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+> ⚠ **Playground / personal use only.** This is a hobby project, not a
+> hardened service. There is no authentication, no rate limiting, and no
+> security audit. Anyone who can reach the port can read every file
+> under the served directory. Run it on your own machine bound to
+> loopback (the default), or on a trusted LAN — never expose it to the
+> public internet, behind a tunnel, or on a shared host.
+
 A single-binary local directory browser — point it at a folder, open the URL, read everything in place from your phone on the same Wi-Fi.
 
 <p align="center">
