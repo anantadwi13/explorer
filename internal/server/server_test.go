@@ -33,8 +33,10 @@ func makeTestRoot(t *testing.T) string {
 	os.Symlink(filepath.Join(root, "notes.txt"), filepath.Join(root, "link_in.txt"))
 	// Symlink outside root
 	os.Symlink("/etc/passwd", filepath.Join(root, "link_out.txt"))
-	// Binary/non-UTF-8 file
+	// Binary/non-UTF-8 file (extension not in MIME table; sniffer-classified)
 	os.WriteFile(filepath.Join(root, "binary.bin"), []byte{0xFF, 0xFE, 0x00, 0x01}, 0600)
+	// Archive — extTable maps .zip to application/zip (non-previewable)
+	os.WriteFile(filepath.Join(root, "release.zip"), []byte("PK\x03\x04not-a-real-zip"), 0600)
 
 	return root
 }
@@ -113,11 +115,11 @@ func TestTreeDotDotEscape(t *testing.T) {
 	assertErrorKind(t, w.Body.String(), "outside_root")
 }
 
-// --- /api/file tests ---
+// --- /api/meta tests ---
 
-func TestFileMarkdown(t *testing.T) {
+func TestMetaMarkdown(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=readme.md", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=readme.md", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -128,14 +130,20 @@ func TestFileMarkdown(t *testing.T) {
 	if resp["kind"] != "markdown" {
 		t.Errorf("expected kind=markdown, got %v", resp["kind"])
 	}
-	if resp["content"] == nil {
-		t.Error("expected content field")
+	if _, ok := resp["content"]; ok {
+		t.Error("meta response must not include a content field")
+	}
+	if _, ok := resp["size"]; !ok {
+		t.Error("meta response must include size")
+	}
+	if _, ok := resp["mtime"]; !ok {
+		t.Error("meta response must include mtime")
 	}
 }
 
-func TestFileText(t *testing.T) {
+func TestMetaText(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=notes.txt", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=notes.txt", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -146,11 +154,14 @@ func TestFileText(t *testing.T) {
 	if resp["kind"] != "text" {
 		t.Errorf("expected kind=text, got %v", resp["kind"])
 	}
+	if _, ok := resp["content"]; ok {
+		t.Error("meta response must not include a content field")
+	}
 }
 
-func TestFileImage(t *testing.T) {
+func TestMetaImage(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=logo.png", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=logo.png", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -161,14 +172,43 @@ func TestFileImage(t *testing.T) {
 	if resp["kind"] != "image" {
 		t.Errorf("expected kind=image, got %v", resp["kind"])
 	}
-	if resp["content"] != nil {
-		t.Error("image response should not include content field")
+	if _, ok := resp["content"]; ok {
+		t.Error("meta response must not include a content field")
 	}
 }
 
-func TestFileNotFound(t *testing.T) {
+func TestMetaNonPreviewable(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=missing.txt", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=release.zip", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 (meta returns even for non-previewable), got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	if k, ok := resp["kind"]; ok && k != "" {
+		t.Errorf("expected kind to be empty/omitted for non-previewable, got %v", k)
+	}
+	if resp["mime"] != "application/zip" {
+		t.Errorf("expected mime=application/zip, got %v", resp["mime"])
+	}
+}
+
+func TestMetaDirectoryReturnsNotRegular(t *testing.T) {
+	srv, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=docs", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for directory path, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "not_regular")
+}
+
+func TestMetaNotFound(t *testing.T) {
+	srv, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=missing.txt", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -177,57 +217,75 @@ func TestFileNotFound(t *testing.T) {
 	assertErrorKind(t, w.Body.String(), "not_found")
 }
 
-func TestFileOutsideRoot(t *testing.T) {
+func TestMetaPathTraversal(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=../../../etc/passwd", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=../../../etc/passwd", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+		t.Errorf("expected 400 for path traversal, got %d", w.Code)
 	}
 	assertErrorKind(t, w.Body.String(), "outside_root")
 }
 
-func TestFileSymlinkOutsideRoot(t *testing.T) {
+func TestMetaSymlinkOutsideRoot(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=link_out.txt", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=link_out.txt", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
+		t.Errorf("expected 400 for out-of-root symlink, got %d", w.Code)
 	}
 	assertErrorKind(t, w.Body.String(), "outside_root")
 }
 
-func TestFileNotUTF8(t *testing.T) {
+func TestTreeReturnsKind(t *testing.T) {
 	srv, _ := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=binary.bin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/tree?path=", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
-	// binary.bin has no known text extension so it's "not previewable" (kind=="")
-	// which maps to not_regular; check it's not 200
-	if w.Code == http.StatusOK {
-		t.Error("expected non-200 for binary file")
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
-}
-
-func TestFileTooLarge(t *testing.T) {
-	root := t.TempDir()
-	// Create a file slightly over 5 MiB
-	big := make([]byte, 5*1024*1024+1)
-	for i := range big {
-		big[i] = 'A'
+	var resp struct {
+		Entries []struct {
+			Name string  `json:"name"`
+			Type string  `json:"type"`
+			Kind *string `json:"kind"`
+		} `json:"entries"`
 	}
-	os.WriteFile(filepath.Join(root, "big.md"), big, 0600)
-
-	srv := server.New(root)
-	req := httptest.NewRequest(http.MethodGet, "/api/file?path=big.md", nil)
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-	if w.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("expected 413, got %d", w.Code)
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
 	}
-	assertErrorKind(t, w.Body.String(), "too_large")
+	got := map[string]string{}
+	for _, e := range resp.Entries {
+		if e.Type != "file" {
+			continue
+		}
+		k := ""
+		if e.Kind != nil {
+			k = *e.Kind
+		}
+		got[e.Name] = k
+	}
+	want := map[string]string{
+		"readme.md":   "markdown",
+		"notes.txt":   "text",
+		"main.go":     "text",
+		"logo.png":    "image",
+		"release.zip": "",
+		"link_in.txt": "text",
+	}
+	for name, wantKind := range want {
+		gotKind, ok := got[name]
+		if !ok {
+			t.Errorf("entry %q missing from listing", name)
+			continue
+		}
+		if gotKind != wantKind {
+			t.Errorf("entry %q: want kind=%q, got %q", name, wantKind, gotKind)
+		}
+	}
 }
 
 // --- /raw/ tests ---

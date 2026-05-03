@@ -8,13 +8,14 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/anantadwi13/explorer/internal/server/mime"
-	"github.com/anantadwi13/explorer/internal/server/resolver"
 )
 
-// inlineSizeCap is the maximum file size (bytes) for inline markdown/text preview.
+// inlineSizeCap is the maximum file size (bytes) for inline markdown/text
+// preview. Documentation-only on the Go side: the SPA enforces this in
+// `INLINE_CAP` (web/src/api/client.ts) before fetching /raw/ for text. Both
+// constants and the spec must move together.
 const inlineSizeCap = 5 * 1024 * 1024
 
 type treeEntry struct {
@@ -23,6 +24,7 @@ type treeEntry struct {
 	Size  *int64     `json:"size,omitempty"`
 	Mtime *time.Time `json:"mtime,omitempty"`
 	Mime  *string    `json:"mime,omitempty"`
+	Kind  *string    `json:"kind,omitempty"`
 }
 
 type treeResponse struct {
@@ -66,13 +68,17 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 			sz := childRes.Info.Size()
 			mt := childRes.Info.ModTime()
 			mimeType := mime.Detect(entryPath)
-			files = append(files, treeEntry{
+			entry := treeEntry{
 				Name:  name,
 				Type:  "file",
 				Size:  &sz,
 				Mtime: &mt,
 				Mime:  &mimeType,
-			})
+			}
+			if k := fileKind(mimeType); k != "" {
+				entry.Kind = &k
+			}
+			files = append(files, entry)
 		}
 	}
 
@@ -91,15 +97,17 @@ func (s *Server) handleTree(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(treeResponse{Entries: all})
 }
 
-type fileResponse struct {
-	Size    int64      `json:"size"`
-	Mtime   time.Time  `json:"mtime"`
-	Mime    string     `json:"mime"`
-	Kind    string     `json:"kind"`
-	Content *string    `json:"content,omitempty"`
+// metaResponse is the body for GET /api/meta — file metadata only,
+// never content. The SPA fetches bytes via /raw/<path> and decodes
+// + size-caps client-side.
+type metaResponse struct {
+	Size  int64     `json:"size"`
+	Mtime time.Time `json:"mtime"`
+	Mime  string    `json:"mime"`
+	Kind  string    `json:"kind,omitempty"`
 }
 
-func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	reqPath := r.URL.Query().Get("path")
 	reqPath = strings.TrimPrefix(reqPath, "/")
 
@@ -114,39 +122,13 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mimeType := mime.Detect(res.AbsPath)
-	sz := res.Info.Size()
-	mt := res.Info.ModTime()
-
-	kind := fileKind(mimeType)
-
-	switch kind {
-	case "image":
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(fileResponse{Size: sz, Mtime: mt, Mime: mimeType, Kind: "image"})
-	case "markdown", "text":
-		if sz > inlineSizeCap {
-			writeError(w, "too_large", "file exceeds inline preview size cap", http.StatusRequestEntityTooLarge)
-			return
-		}
-		data, err := os.ReadFile(res.AbsPath)
-		if err != nil {
-			if os.IsPermission(err) {
-				writeError(w, string(resolver.ErrPermissionDenied), "permission denied", http.StatusForbidden)
-			} else {
-				writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
-			}
-			return
-		}
-		if !utf8.Valid(data) {
-			writeError(w, "not_utf8", "file is not valid UTF-8", http.StatusBadRequest)
-			return
-		}
-		content := string(data)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(fileResponse{Size: sz, Mtime: mt, Mime: mimeType, Kind: kind, Content: &content})
-	default:
-		writeError(w, "not_regular", "file type is not previewable", http.StatusBadRequest)
-	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(metaResponse{
+		Size:  res.Info.Size(),
+		Mtime: res.Info.ModTime(),
+		Mime:  mimeType,
+		Kind:  fileKind(mimeType),
+	})
 }
 
 // fileKind classifies a MIME type into one of: "markdown", "text", "image", or "".

@@ -20,6 +20,10 @@ const TEXT_EXTS = new Set(['txt', 'log', 'csv', 'tsv'])
 
 export type EntryKind = 'folder' | 'image' | 'markdown' | 'code' | 'text' | 'file'
 
+// Intentionally distinct from `entry.kind` (the server-side previewability
+// classification: 'markdown' | 'text' | 'image' | ''). This client helper
+// is broader — it also distinguishes folders, code-vs-prose text, and a
+// generic file fallback for icon-picking purposes only.
 export function entryKind(entry: TreeEntry): EntryKind {
   if (entry.type === 'dir') return 'folder'
   const mime = entry.mime ?? ''

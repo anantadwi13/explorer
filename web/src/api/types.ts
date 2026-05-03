@@ -4,18 +4,18 @@ export interface TreeEntry {
   size?: number
   mtime?: string
   mime?: string
+  kind?: 'markdown' | 'text' | 'image' | ''
 }
 
 export interface TreeResponse {
   entries: TreeEntry[]
 }
 
-export interface FileResponse {
+export interface MetaResponse {
   size: number
   mtime: string
   mime: string
-  kind: 'markdown' | 'text' | 'image'
-  content?: string
+  kind: 'markdown' | 'text' | 'image' | ''
 }
 
 export interface ApiError {

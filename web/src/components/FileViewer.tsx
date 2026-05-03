@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as api from '../api/client'
-import type { FileResponse, ApiError, TreeEntry } from '../api/types'
+import { INLINE_CAP } from '../api/client'
+import type { MetaResponse, ApiError, TreeEntry } from '../api/types'
 import { useLayout } from './LayoutContext'
 import { iconForFile } from './iconForFile'
 import MarkdownRenderer from './MarkdownRenderer'
@@ -14,20 +15,63 @@ interface Props {
 }
 
 export default function FileViewer({ path }: Props) {
-  const [data, setData] = useState<FileResponse | null>(null)
+  const [meta, setMeta] = useState<MetaResponse | null>(null)
+  const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const navigate = useNavigate()
   const { showToast } = useLayout()
-  // ViewPage remounts us via `key={path}` on every navigation, so the initial
-  // `null` data/error correctly reflects the loading state without a setLoading
-  // toggle inside the effect.
-  const loading = data === null && error === null
+
+  // Loading: waiting on meta, or — for text/markdown — also on the /raw/ content fetch.
+  // Image and non-previewable kinds need only meta.
+  const needsContent = meta?.kind === 'markdown' || meta?.kind === 'text'
+  const loading = !error && (!meta || (needsContent && content === null))
 
   useEffect(() => {
-    api.file(path).then((res) => {
-      if (res.ok) setData(res.data)
-      else setError(res.error)
+    let cancelled = false
+    api.meta(path).then((res) => {
+      if (cancelled) return
+      if (!res.ok) {
+        setError(res.error)
+        return
+      }
+      const m = res.data
+      setMeta(m)
+
+      // Non-previewable: surface the existing "not_regular" placeholder.
+      if (!m.kind) {
+        setError({ error: 'not_regular', message: 'file type cannot be previewed' })
+        return
+      }
+      // Image renders directly from /raw/ via <img>; nothing more to fetch.
+      if (m.kind === 'image') return
+
+      // Text / markdown: enforce cap, then fetch + decode.
+      if (m.size > INLINE_CAP) {
+        setError({ error: 'too_large', message: 'file exceeds inline preview size cap' })
+        return
+      }
+      fetch('/raw/' + encodeURI(path))
+        .then(async (r) => {
+          if (cancelled) return
+          if (!r.ok) {
+            setError({ error: 'internal_error', message: `raw fetch failed: ${r.status}` })
+            return
+          }
+          const buf = await r.arrayBuffer()
+          try {
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(buf)
+            if (!cancelled) setContent(text)
+          } catch {
+            if (!cancelled) setError({ error: 'not_utf8', message: 'file contains binary data' })
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) setError({ error: 'internal_error', message: String(e) })
+        })
     })
+    return () => {
+      cancelled = true
+    }
   }, [path])
 
   const filename = path.split('/').pop() ?? path
@@ -57,9 +101,10 @@ export default function FileViewer({ path }: Props) {
   const iconEntry: TreeEntry = {
     name: filename,
     type: 'file',
-    size: data?.size,
-    mtime: data?.mtime,
-    mime: data?.mime,
+    size: meta?.size,
+    mtime: meta?.mtime,
+    mime: meta?.mime,
+    kind: meta?.kind,
   }
 
   if (error) {
@@ -67,9 +112,9 @@ export default function FileViewer({ path }: Props) {
       <div className="file-detail">
         <FileHead
           filename={filename}
-          mime={null}
-          size={null}
-          mtime={null}
+          mime={meta?.mime ?? null}
+          size={meta?.size ?? null}
+          mtime={meta?.mtime ?? null}
           path={path}
           icon={iconForFile(iconEntry)}
           onBack={goBack}
@@ -81,27 +126,27 @@ export default function FileViewer({ path }: Props) {
     )
   }
 
-  if (!data) return null
+  if (!meta) return null
 
   return (
     <div className="file-detail">
       <FileHead
         filename={filename}
-        mime={data.mime}
-        size={data.size}
-        mtime={data.mtime}
+        mime={meta.mime}
+        size={meta.size}
+        mtime={meta.mtime}
         path={path}
         icon={iconForFile(iconEntry)}
         onBack={goBack}
         onCopyLink={onCopyLink}
         showDownload
       />
-      <div className={`vw vw-${data.kind}`}>
-        {data.kind === 'markdown' && (
-          <MarkdownRenderer content={data.content!} currentPath={path} />
+      <div className={`vw vw-${meta.kind}`}>
+        {meta.kind === 'markdown' && (
+          <MarkdownRenderer content={content!} currentPath={path} />
         )}
-        {data.kind === 'text' && <pre className="text-body">{data.content}</pre>}
-        {data.kind === 'image' && (
+        {meta.kind === 'text' && <pre className="text-body">{content}</pre>}
+        {meta.kind === 'image' && (
           <img src={`/raw/${path}`} alt={filename} />
         )}
       </div>
