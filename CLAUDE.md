@@ -25,7 +25,7 @@ go test ./internal/server -run TestFileMarkdown -v
 cd web && npm run lint
 ```
 
-`make build` is required (not `go build` alone) — the Go binary uses `//go:embed all:dist` and serves a `501`-style fallback if `internal/server/ui/dist/` is empty.
+`make build` is required (not `go build` alone) — the Go binary uses `//go:embed all:dist` and serves an HTTP 404 fallback (the stock `http.ServeFileFS` response when `dist/index.html` is missing) if `internal/server/ui/dist/` is empty.
 
 The dev workflow is two-process: `make dev-server` (Go on :8080) + `make dev-web` (Vite on :5173). Vite proxies API/raw paths to the Go server.
 

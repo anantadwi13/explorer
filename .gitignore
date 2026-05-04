@@ -21,3 +21,6 @@ web/node_modules/
 # OS
 .DS_Store
 Thumbs.db
+
+# Release archives (produced by `make release-snapshot` / GitHub Actions)
+dist/

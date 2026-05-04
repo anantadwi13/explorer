@@ -790,7 +790,7 @@ The compiled Single-Page Application assets that the Go binary serves SHALL be p
 
 - **WHEN** a user with no clone of the repository runs `go install github.com/anantadwi13/explorer/cmd/explorer@latest`
 - **THEN** the resulting binary serves a non-empty SPA shell at `/` (HTTP 200 with a non-trivial HTML body that loads the bundled JS/CSS)
-- **AND** the binary does NOT serve the "SPA not yet embedded" 501-style fallback
+- **AND** the binary does NOT serve the empty-embed fallback (an HTTP 404 with `Content-Type: text/plain` and body `404 page not found`, returned by the stock `http.ServeFileFS` handler in `internal/server/static.go` when `dist/index.html` is missing)
 
 #### Scenario: SPA source change without dist regeneration is detectable
 

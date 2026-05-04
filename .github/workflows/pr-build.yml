@@ -1,0 +1,219 @@
+name: pr-build
+
+on:
+  pull_request:
+
+# Narrow scope explicitly in case repo-default permissions ever change.
+permissions:
+  contents: read
+
+# Force-push to the PR cancels the previous in-flight build.
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+      build_date: ${{ steps.vars.outputs.build_date }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - id: vars
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          VERSION="v0.0.0-${SHORT_SHA}"
+          BUILD_DATE=$(date -u +%Y-%m-%d)
+          {
+            echo "version=$VERSION"
+            echo "short_sha=$SHORT_SHA"
+            echo "build_date=$BUILD_DATE"
+          } >> "$GITHUB_OUTPUT"
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: build SPA
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/ui/dist/
+          if-no-files-found: error
+
+  build-binaries:
+    needs: [prepare, build-web]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/ui/dist/
+      - name: build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/staging
+          EXT=""
+          [ "$GOOS" = "windows" ] && EXT=".exe"
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=$VERSION -X main.commit=$SHORT_SHA -X main.buildDate=$BUILD_DATE" \
+            -o "dist/staging/explorer$EXT" ./cmd/explorer
+      - name: package archive + bare binary
+        run: |
+          set -euo pipefail
+          PREFIX="explorer_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          cp LICENSE README.md dist/staging/
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd dist/staging && zip -q "../${PREFIX}.zip" explorer.exe LICENSE README.md)
+            cp dist/staging/explorer.exe "dist/${PREFIX}.exe"
+          else
+            tar -C dist/staging -czf "dist/${PREFIX}.tar.gz" explorer LICENSE README.md
+            cp dist/staging/explorer "dist/${PREFIX}"
+          fi
+          rm -rf dist/staging
+          ls -la dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/explorer_*
+          if-no-files-found: error
+
+  smoke-test:
+    needs: [prepare, build-binaries]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: assets-*
+          path: dist/
+          merge-multiple: true
+      - name: list downloaded assets
+        run: ls -la dist/
+      - name: install QEMU for arm64 emulation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+      - name: smoke test (linux/amd64 native)
+        run: |
+          set -euo pipefail
+          BIN="dist/explorer_${VERSION}_linux_amd64"
+          chmod +x "$BIN"
+          OUT=$("$BIN" --version)
+          EXPECTED="${VERSION} (commit ${SHORT_SHA}, built ${BUILD_DATE})"
+          echo "got:      $OUT"
+          echo "expected: $EXPECTED"
+          [ "$OUT" = "$EXPECTED" ] || { echo "version line mismatch"; exit 1; }
+          "$BIN" ./testdata --port 18080 &
+          SERVER_PID=$!
+          trap 'kill -TERM $SERVER_PID 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 25); do
+            if curl -fsS -o /dev/null http://127.0.0.1:18080/; then ready=1; break; fi
+            sleep 0.2
+          done
+          [ "$ready" -eq 1 ] || { echo "server never listened on :18080"; exit 1; }
+          STATUS=$(curl -s -o /tmp/body -w '%{http_code} %{content_type}' http://127.0.0.1:18080/)
+          echo "status+ctype: $STATUS"
+          [ -s /tmp/body ] || { echo "empty body"; exit 1; }
+          case "$STATUS" in
+            "200 text/html"*) ;;
+            *) echo "expected '200 text/html...', got: $STATUS"; exit 1 ;;
+          esac
+          kill -TERM $SERVER_PID
+          wait $SERVER_PID
+          EXIT=$?
+          trap - EXIT
+          [ "$EXIT" -eq 0 ] || { echo "graceful shutdown failed (exit $EXIT)"; exit 1; }
+      - name: smoke test (linux/arm64 via QEMU)
+        run: |
+          set -euo pipefail
+          BIN="dist/explorer_${VERSION}_linux_arm64"
+          chmod +x "$BIN"
+          OUT=$(qemu-aarch64-static "$BIN" --version)
+          EXPECTED="${VERSION} (commit ${SHORT_SHA}, built ${BUILD_DATE})"
+          [ "$OUT" = "$EXPECTED" ] || { echo "arm64 version mismatch: got=$OUT expected=$EXPECTED"; exit 1; }
+          qemu-aarch64-static "$BIN" ./testdata --port 18081 &
+          SERVER_PID=$!
+          trap 'kill -TERM $SERVER_PID 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 50); do
+            if curl -fsS -o /dev/null http://127.0.0.1:18081/; then ready=1; break; fi
+            sleep 0.2
+          done
+          [ "$ready" -eq 1 ] || { echo "arm64 server never listened on :18081"; exit 1; }
+          STATUS=$(curl -s -o /tmp/body_arm -w '%{http_code} %{content_type}' http://127.0.0.1:18081/)
+          [ -s /tmp/body_arm ] || { echo "arm64 empty body"; exit 1; }
+          case "$STATUS" in
+            "200 text/html"*) ;;
+            *) echo "arm64 expected '200 text/html...', got: $STATUS"; exit 1 ;;
+          esac
+          kill -TERM $SERVER_PID
+          wait $SERVER_PID
+          EXIT=$?
+          trap - EXIT
+          [ "$EXIT" -eq 0 ] || { echo "arm64 graceful shutdown failed (exit $EXIT)"; exit 1; }
+      - name: assert archive layouts (all six targets)
+        run: |
+          set -euo pipefail
+          fail=0
+          for archive in dist/explorer_${VERSION}_*.tar.gz; do
+            entries=$(tar -tzf "$archive" | sort | tr '\n' ' ')
+            echo "$archive -> $entries"
+            if [ "$entries" != "LICENSE README.md explorer " ]; then
+              echo "  FAIL: expected 'LICENSE README.md explorer'"
+              fail=1
+            fi
+          done
+          for archive in dist/explorer_${VERSION}_*.zip; do
+            entries=$(unzip -Z1 "$archive" | sort | tr '\n' ' ')
+            echo "$archive -> $entries"
+            if [ "$entries" != "LICENSE README.md explorer.exe " ]; then
+              echo "  FAIL: expected 'LICENSE README.md explorer.exe'"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
