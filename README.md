@@ -26,7 +26,82 @@ Sometimes you just want to read the markdown notes, text files, and images on yo
 
 ## Install
 
-### With Go (recommended for users)
+### Download the binary (fastest)
+
+Bare binary, no extract step. Replace `<TAG>` with the latest release version from the [Releases page](https://github.com/anantadwi13/explorer/releases) (e.g. `v0.2.0`).
+
+```bash
+# linux/amd64
+curl -L -o explorer https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_linux_amd64 && chmod +x explorer && ./explorer ./
+
+# linux/arm64
+curl -L -o explorer https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_linux_arm64 && chmod +x explorer && ./explorer ./
+
+# darwin/amd64 (Intel Macs)
+curl -L -o explorer https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_darwin_amd64 && chmod +x explorer && ./explorer ./
+
+# darwin/arm64 (Apple Silicon)
+curl -L -o explorer https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_darwin_arm64 && chmod +x explorer && ./explorer ./
+```
+
+Windows (PowerShell):
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_windows_amd64.exe -OutFile explorer.exe
+.\explorer.exe .
+```
+
+### Download the archive (with LICENSE + README)
+
+Same binary inside, plus `LICENSE` and `README.md` at the same directory level. The unix archive preserves the executable bit, so no `chmod` is needed after extracting.
+
+```bash
+# linux/amd64
+curl -L -o explorer.tar.gz https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_linux_amd64.tar.gz && tar -xzf explorer.tar.gz && ./explorer ./
+
+# linux/arm64
+curl -L -o explorer.tar.gz https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_linux_arm64.tar.gz && tar -xzf explorer.tar.gz && ./explorer ./
+
+# darwin/amd64
+curl -L -o explorer.tar.gz https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_darwin_amd64.tar.gz && tar -xzf explorer.tar.gz && ./explorer ./
+
+# darwin/arm64
+curl -L -o explorer.tar.gz https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_darwin_arm64.tar.gz && tar -xzf explorer.tar.gz && ./explorer ./
+```
+
+Windows (PowerShell):
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/anantadwi13/explorer/releases/download/<TAG>/explorer_<TAG>_windows_amd64.zip -OutFile explorer.zip
+Expand-Archive .\explorer.zip -DestinationPath .
+.\explorer.exe .
+```
+
+### Verify the download
+
+Each release ships a single `checksums.txt` covering both bare binaries and archives. `--ignore-missing` lets the verify step succeed for whichever subset you actually downloaded.
+
+```bash
+# linux
+sha256sum --ignore-missing -c checksums.txt
+
+# macOS
+shasum -a 256 --ignore-missing -c checksums.txt
+```
+
+After running the binary, confirm what you have with `./explorer --version` — it prints the embedded tag, short commit, and build date in `<tag> (commit <short-sha>, built <yyyy-mm-dd>)` form.
+
+**macOS Gatekeeper:** the first launch may show *"cannot be opened because the developer cannot be verified"* — these binaries are not signed/notarised. Clear the quarantine attribute once with:
+
+```bash
+xattr -d com.apple.quarantine ./explorer
+```
+
+This applies to both the bare binary and the binary extracted from the archive.
+
+**Windows SmartScreen:** the first launch may show *"Windows protected your PC"*. Click **More info → Run anyway**. Same caveat applies to both shapes — the binaries are not Authenticode-signed.
+
+### With Go (recommended for users with a Go toolchain)
 
 Requires Go 1.24+.
 
@@ -34,7 +109,7 @@ Requires Go 1.24+.
 go install github.com/anantadwi13/explorer/cmd/explorer@latest
 ```
 
-This drops an `explorer` binary in `$GOBIN` (or `$GOPATH/bin` — make sure it is on your `PATH`). Once tagged releases exist, pin a version with `@v0.1.0` instead of `@latest`.
+This drops an `explorer` binary in `$GOBIN` (or `$GOPATH/bin` — make sure it is on your `PATH`). Once tagged releases exist, pin a version with `@v0.2.0` instead of `@latest`.
 
 To try it without installing:
 
@@ -96,6 +171,7 @@ explorer serving /home/alice/docs
 |------|---------|-------------|
 | `--port` | `8080` | TCP port to listen on |
 | `--host` | `127.0.0.1` | Address to bind to |
+| `--version`, `-v` | — | Print `<version> (commit <short-sha>, built <yyyy-mm-dd>)` and exit |
 
 ## Features
 
@@ -150,9 +226,9 @@ These are intentionally deferred:
 
 Make sure the `command` in `docker-compose.yml` includes `--host 0.0.0.0`. The default loopback bind is not reachable through Docker's port mapping.
 
-**Binary shows "SPA not yet embedded" or 501 errors after a local build**
+**`GET /` returns a plain-text 404 (`404 page not found`) after a local build**
 
-Run `make build` (not just `go build`) to ensure the frontend is built and embedded. If you got the binary via `go install ...@latest` and still see this, the published `internal/server/ui/dist/` is empty — please open an issue, this should not happen.
+The embedded SPA is empty. Run `make build` (not just `go build`) to build the frontend and embed it. If you got the binary via `go install ...@latest` and still see this, the published `internal/server/ui/dist/` is empty — please open an issue, this should not happen.
 
 **Symlink file is missing from listing**
 

@@ -16,10 +16,17 @@ import (
 
 const playgroundBanner = "explorer (playground build — no auth, no audit; do not expose publicly)"
 
+// Overridden at link time by the release pipeline via -ldflags "-X main.<name>=...".
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	fs := flag.NewFlagSet("explorer", flag.ContinueOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: explorer <dir> [--port PORT] [--host HOST]")
+		fmt.Fprintln(os.Stderr, "Usage: explorer <dir> [--port PORT] [--host HOST] [--version]")
 		fmt.Fprintln(os.Stderr, "  Playground tool — no auth, no security audit. Bind to loopback")
 		fmt.Fprintln(os.Stderr, "  unless you trust your network.")
 		fs.PrintDefaults()
@@ -27,6 +34,9 @@ func main() {
 
 	port := fs.Int("port", 8080, "TCP port to listen on")
 	host := fs.String("host", "127.0.0.1", "Host address to bind to")
+	var showVersion bool
+	fs.BoolVar(&showVersion, "version", false, "Print version information and exit")
+	fs.BoolVar(&showVersion, "v", false, "Print version information and exit (alias for --version)")
 
 	// Partition args into flag args and positional args so flags can follow the dir.
 	var flagArgs, posArgs []string
@@ -46,6 +56,11 @@ func main() {
 
 	if err := fs.Parse(flagArgs); err != nil {
 		os.Exit(2)
+	}
+
+	if showVersion {
+		fmt.Printf("%s (commit %s, built %s)\n", version, commit, buildDate)
+		os.Exit(0)
 	}
 
 	if len(posArgs) < 1 {

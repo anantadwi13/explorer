@@ -1,0 +1,254 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.vars.outputs.version }}
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+      build_date: ${{ steps.vars.outputs.build_date }}
+      make_latest: ${{ steps.vars.outputs.make_latest }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: vars
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.ref_name }}"
+          # Explicit --short=7 to match the spec (git's default short length is
+          # usually 7 but is not guaranteed across configurations).
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          BUILD_DATE=$(date -u +%Y-%m-%d)
+          # Mark as latest unless the tag has -rc / -beta / -alpha suffix.
+          if echo "$VERSION" | grep -qE -- '-(rc|beta|alpha)'; then
+            MAKE_LATEST="false"
+          else
+            MAKE_LATEST="true"
+          fi
+          {
+            echo "version=$VERSION"
+            echo "short_sha=$SHORT_SHA"
+            echo "build_date=$BUILD_DATE"
+            echo "make_latest=$MAKE_LATEST"
+          } >> "$GITHUB_OUTPUT"
+
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # web/.nvmrc and web/package.json#engines.node both absent — pin LTS here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: build SPA
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/ui/dist/
+          if-no-files-found: error
+
+  build-binaries:
+    needs: [prepare, build-web]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: internal/server/ui/dist/
+      - name: build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/staging
+          EXT=""
+          [ "$GOOS" = "windows" ] && EXT=".exe"
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=$VERSION -X main.commit=$SHORT_SHA -X main.buildDate=$BUILD_DATE" \
+            -o "dist/staging/explorer$EXT" ./cmd/explorer
+      - name: package archive + bare binary
+        run: |
+          set -euo pipefail
+          PREFIX="explorer_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          cp LICENSE README.md dist/staging/
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd dist/staging && zip -q "../${PREFIX}.zip" explorer.exe LICENSE README.md)
+            cp dist/staging/explorer.exe "dist/${PREFIX}.exe"
+          else
+            tar -C dist/staging -czf "dist/${PREFIX}.tar.gz" explorer LICENSE README.md
+            cp dist/staging/explorer "dist/${PREFIX}"
+          fi
+          # Drop the staging dir so only the two release-bound files ship in the artifact.
+          rm -rf dist/staging
+          ls -la dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assets-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/explorer_*
+          if-no-files-found: error
+
+  smoke-test:
+    needs: [prepare, build-binaries]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: assets-*
+          path: dist/
+          merge-multiple: true
+      - name: list downloaded assets
+        run: ls -la dist/
+      - name: install QEMU for arm64 emulation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+      - name: smoke test (linux/amd64 native)
+        run: |
+          set -euo pipefail
+          BIN="dist/explorer_${VERSION}_linux_amd64"
+          chmod +x "$BIN"
+          OUT=$("$BIN" --version)
+          EXPECTED="${VERSION} (commit ${SHORT_SHA}, built ${BUILD_DATE})"
+          echo "got:      $OUT"
+          echo "expected: $EXPECTED"
+          [ "$OUT" = "$EXPECTED" ] || { echo "version line mismatch"; exit 1; }
+          "$BIN" ./testdata --port 18080 &
+          SERVER_PID=$!
+          trap 'kill -TERM $SERVER_PID 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 25); do
+            if curl -fsS -o /dev/null http://127.0.0.1:18080/; then ready=1; break; fi
+            sleep 0.2
+          done
+          [ "$ready" -eq 1 ] || { echo "server never listened on :18080"; exit 1; }
+          STATUS=$(curl -s -o /tmp/body -w '%{http_code} %{content_type}' http://127.0.0.1:18080/)
+          echo "status+ctype: $STATUS"
+          [ -s /tmp/body ] || { echo "empty body"; exit 1; }
+          case "$STATUS" in
+            "200 text/html"*) ;;
+            *) echo "expected '200 text/html...', got: $STATUS"; exit 1 ;;
+          esac
+          kill -TERM $SERVER_PID
+          wait $SERVER_PID
+          EXIT=$?
+          trap - EXIT
+          [ "$EXIT" -eq 0 ] || { echo "graceful shutdown failed (exit $EXIT)"; exit 1; }
+      - name: smoke test (linux/arm64 via QEMU)
+        run: |
+          set -euo pipefail
+          BIN="dist/explorer_${VERSION}_linux_arm64"
+          chmod +x "$BIN"
+          OUT=$(qemu-aarch64-static "$BIN" --version)
+          EXPECTED="${VERSION} (commit ${SHORT_SHA}, built ${BUILD_DATE})"
+          [ "$OUT" = "$EXPECTED" ] || { echo "arm64 version mismatch: got=$OUT expected=$EXPECTED"; exit 1; }
+          qemu-aarch64-static "$BIN" ./testdata --port 18081 &
+          SERVER_PID=$!
+          trap 'kill -TERM $SERVER_PID 2>/dev/null || true' EXIT
+          ready=0
+          # arm64-via-QEMU is slower; allow up to 10s.
+          for _ in $(seq 1 50); do
+            if curl -fsS -o /dev/null http://127.0.0.1:18081/; then ready=1; break; fi
+            sleep 0.2
+          done
+          [ "$ready" -eq 1 ] || { echo "arm64 server never listened on :18081"; exit 1; }
+          STATUS=$(curl -s -o /tmp/body_arm -w '%{http_code} %{content_type}' http://127.0.0.1:18081/)
+          [ -s /tmp/body_arm ] || { echo "arm64 empty body"; exit 1; }
+          case "$STATUS" in
+            "200 text/html"*) ;;
+            *) echo "arm64 expected '200 text/html...', got: $STATUS"; exit 1 ;;
+          esac
+          kill -TERM $SERVER_PID
+          wait $SERVER_PID
+          EXIT=$?
+          trap - EXIT
+          [ "$EXIT" -eq 0 ] || { echo "arm64 graceful shutdown failed (exit $EXIT)"; exit 1; }
+      - name: assert archive layouts (all six targets)
+        run: |
+          set -euo pipefail
+          fail=0
+          for archive in dist/explorer_${VERSION}_*.tar.gz; do
+            entries=$(tar -tzf "$archive" | sort | tr '\n' ' ')
+            echo "$archive -> $entries"
+            if [ "$entries" != "LICENSE README.md explorer " ]; then
+              echo "  FAIL: expected 'LICENSE README.md explorer'"
+              fail=1
+            fi
+          done
+          for archive in dist/explorer_${VERSION}_*.zip; do
+            entries=$(unzip -Z1 "$archive" | sort | tr '\n' ' ')
+            echo "$archive -> $entries"
+            if [ "$entries" != "LICENSE README.md explorer.exe " ]; then
+              echo "  FAIL: expected 'LICENSE README.md explorer.exe'"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+
+  release:
+    needs: [prepare, smoke-test]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: assets-*
+          path: dist/
+          merge-multiple: true
+      - name: generate checksums.txt
+        run: |
+          set -euo pipefail
+          cd dist
+          # Shared explorer_<version>_* prefix covers both archives and bare binaries
+          # and naturally excludes checksums.txt itself; expect 12 lines.
+          sha256sum explorer_${VERSION}_* > checksums.txt
+          cat checksums.txt
+          lines=$(wc -l < checksums.txt)
+          [ "$lines" -eq 12 ] || { echo "expected 12 checksum lines, got $lines"; exit 1; }
+      # Pinned to @v2 for now. Consider pinning to a commit SHA for stricter
+      # supply-chain hygiene; this trade-off costs us automatic patch updates
+      # of the action, which Dependabot can otherwise handle.
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          make_latest: ${{ needs.prepare.outputs.make_latest }}
+          files: |
+            dist/explorer_${{ needs.prepare.outputs.version }}_*
+            dist/checksums.txt

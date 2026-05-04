@@ -202,4 +202,94 @@ func TestHelpFlagPrintsFooter(t *testing.T) {
 	if !strings.Contains(afterFooter, "-port") {
 		t.Errorf("expected flag defaults (e.g. -port) below the footer, got:\n%s", afterFooter)
 	}
+	if !strings.Contains(afterFooter, "-version") {
+		t.Errorf("expected --version listed in flag defaults, got:\n%s", afterFooter)
+	}
+	if !strings.Contains(afterFooter, "-v\t") && !strings.Contains(afterFooter, "-v ") {
+		t.Errorf("expected -v alias listed in flag defaults, got:\n%s", afterFooter)
+	}
+}
+
+const localVersionLine = "dev (commit unknown, built unknown)\n"
+
+func TestVersionFlag(t *testing.T) {
+	exit, stdout, stderr := runOnce(t, "--version")
+	if exit != 0 {
+		t.Fatalf("expected exit 0, got %d\nstderr:\n%s", exit, stderr)
+	}
+	if stdout != localVersionLine {
+		t.Errorf("stdout = %q, want %q", stdout, localVersionLine)
+	}
+	if stderr != "" {
+		t.Errorf("expected empty stderr, got %q", stderr)
+	}
+}
+
+func TestVersionShortAlias(t *testing.T) {
+	exit, stdout, _ := runOnce(t, "-v")
+	if exit != 0 {
+		t.Fatalf("expected exit 0, got %d", exit)
+	}
+	if stdout != localVersionLine {
+		t.Errorf("stdout = %q, want %q", stdout, localVersionLine)
+	}
+}
+
+func TestVersionShortCircuitsMissingDir(t *testing.T) {
+	exit, stdout, stderr := runOnce(t, "--version")
+	if exit != 0 {
+		t.Fatalf("--version with no positional must exit 0, got %d\nstderr:\n%s", exit, stderr)
+	}
+	if stdout != localVersionLine {
+		t.Errorf("stdout = %q, want %q", stdout, localVersionLine)
+	}
+}
+
+func TestVersionCombinedWithFlagsAndDir(t *testing.T) {
+	dir := t.TempDir()
+	exit, stdout, stderr := runOnce(t, dir, "--port", "0", "--version")
+	if exit != 0 {
+		t.Fatalf("expected exit 0, got %d\nstderr:\n%s", exit, stderr)
+	}
+	if stdout != localVersionLine {
+		t.Errorf("stdout = %q, want %q", stdout, localVersionLine)
+	}
+	if strings.Contains(stdout, playgroundBanner) {
+		t.Errorf("stdout must NOT contain playground banner with --version, got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "http://") {
+		t.Errorf("stdout must NOT contain server URL with --version, got:\n%s", stdout)
+	}
+}
+
+func TestVersionLdflagsInjection(t *testing.T) {
+	dir, err := os.MkdirTemp("", "explorer-ldflags-test-")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	bin := filepath.Join(dir, "explorer")
+	build := exec.Command(
+		"go", "build",
+		"-ldflags", "-X main.version=v9.9.9-test -X main.commit=deadbee -X main.buildDate=2026-05-15",
+		"-o", bin, ".",
+	)
+	var berr bytes.Buffer
+	build.Stderr = &berr
+	if err := build.Run(); err != nil {
+		t.Fatalf("go build with ldflags: %v\n%s", err, berr.String())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	var sout, serr bytes.Buffer
+	cmd.Stdout = &sout
+	cmd.Stderr = &serr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run injected binary: %v\nstderr: %s", err, serr.String())
+	}
+	want := "v9.9.9-test (commit deadbee, built 2026-05-15)\n"
+	if got := sout.String(); got != want {
+		t.Errorf("ldflags-injected stdout = %q, want %q", got, want)
+	}
 }
