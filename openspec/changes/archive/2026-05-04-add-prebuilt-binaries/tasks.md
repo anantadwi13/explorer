@@ -93,8 +93,8 @@ The repo's existing documentation describes the empty-`internal/server/ui/dist/`
 
 ## 6. Specs sync
 
-- [ ] 6.1 After implementation is complete and verified (sections 1–5a done — note §5a sits between §5 and §6, also a prerequisite), run `/opsx:verify` to confirm the implementation matches the change artifacts.
-- [ ] 6.2 Run `/opsx:sync` (or `/opsx:archive`) to fold the delta from `specs/directory-browser/spec.md` into the canonical spec and add the new `release-distribution` capability under `openspec/specs/`.
+- [x] 6.1 After implementation is complete and verified (sections 1–5a done — note §5a sits between §5 and §6, also a prerequisite), run `/opsx:verify` to confirm the implementation matches the change artifacts. **Done — verified twice during the implementation session, second pass confirmed all checks green after the v0.2.0 update.**
+- [x] 6.2 Run `/opsx:sync` (or `/opsx:archive`) to fold the delta from `specs/directory-browser/spec.md` into the canonical spec and add the new `release-distribution` capability under `openspec/specs/`. **Done — handled by `/opsx:archive` flow; sync delegated to subagent before the move.**
 
 ## 7. First release
 

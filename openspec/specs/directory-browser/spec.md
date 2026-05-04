@@ -8,7 +8,7 @@ A local HTTP server and single-page application (SPA) that allows users to brows
 
 ### Requirement: CLI invocation and flags
 
-The `explorer` binary SHALL accept a single positional argument naming the directory to serve (the "served root") and SHALL accept optional flags `--port` and `--host`. The default `--port` SHALL be `8080`. The default `--host` SHALL be `127.0.0.1`. Invocation without a directory argument or with a path that is not an existing readable directory SHALL fail with a non-zero exit code and a message on stderr.
+The `explorer` binary SHALL accept a single positional argument naming the directory to serve (the "served root") and SHALL accept optional flags `--port`, `--host`, and `--version` (alias `-v`). The default `--port` SHALL be `8080`. The default `--host` SHALL be `127.0.0.1`. Invocation without a directory argument or with a path that is not an existing readable directory SHALL fail with a non-zero exit code and a message on stderr, **except** when `--version` (or `-v`) is supplied — in that case the binary SHALL print the version line and exit 0 before validating the directory argument.
 
 The same invocation contract SHALL apply when the binary is executed via the Go toolchain using the module path `github.com/anantadwi13/explorer/cmd/explorer`, including `go run github.com/anantadwi13/explorer/cmd/explorer@latest <dir> [flags...]` and the binary produced by `go install github.com/anantadwi13/explorer/cmd/explorer@latest`.
 
@@ -26,6 +26,8 @@ The `--help` (and any usage-error) output SHALL include, immediately after the `
   Playground tool — no auth, no security audit. Bind to loopback
   unless you trust your network.
 ```
+
+The `--version` (and `-v`) flag SHALL print exactly one line to stdout in the form `<version> (commit <commit>, built <buildDate>)` and SHALL exit with status 0. The values of `<version>`, `<commit>`, and `<buildDate>` are injected at link time by the release pipeline (see the `release-distribution` capability); locally-built binaries print the literal default `dev (commit unknown, built unknown)`. The `--version` flag SHALL NOT print the playground banner, the non-loopback warning, or any other line. When `--version` is combined with any other flag or positional argument, those other inputs SHALL be ignored and the version line SHALL be printed regardless.
 
 #### Scenario: Invoke with directory only
 
@@ -53,7 +55,7 @@ The `--help` (and any usage-error) output SHALL include, immediately after the `
 
 #### Scenario: Missing directory argument
 
-- **WHEN** the user runs `explorer` with no positional argument
+- **WHEN** the user runs `explorer` with no positional argument and no `--version` flag
 - **THEN** the binary exits non-zero
 - **AND** prints a usage message on stderr
 - **AND** the usage message contains the playground footer text `Playground tool — no auth, no security audit. Bind to loopback unless you trust your network.`
@@ -70,6 +72,34 @@ The `--help` (and any usage-error) output SHALL include, immediately after the `
 - **THEN** the usage output contains the `Usage: explorer <dir> [--port PORT] [--host HOST]` line
 - **AND** the line immediately after begins with `  Playground tool — no auth, no security audit.`
 - **AND** the flag defaults are printed below the footer
+- **AND** the listed flags include `--version` (alias `-v`)
+
+#### Scenario: Version flag with no other arguments
+
+- **WHEN** the user runs `explorer --version`
+- **THEN** stdout contains exactly one line in the form `<version> (commit <commit>, built <buildDate>)`
+- **AND** stdout does NOT contain the playground banner
+- **AND** the process exits 0
+- **AND** no HTTP server is started
+
+#### Scenario: Version short flag alias
+
+- **WHEN** the user runs `explorer -v`
+- **THEN** the output is identical to `explorer --version`
+- **AND** the process exits 0
+
+#### Scenario: Version flag combined with directory and other flags
+
+- **WHEN** the user runs `explorer /some/dir --port 9000 --version`
+- **THEN** stdout contains exactly the version line
+- **AND** the process exits 0
+- **AND** no HTTP server is started on port 9000 or any other port
+
+#### Scenario: Version flag on a locally-built binary
+
+- **WHEN** a binary built via `make build` or `go install github.com/anantadwi13/explorer/cmd/explorer@latest` (without release-pipeline ldflags) is invoked with `--version`
+- **THEN** stdout contains exactly one line: `dev (commit unknown, built unknown)`
+- **AND** the process exits 0
 
 #### Scenario: Invoke via `go run` from the module path
 
