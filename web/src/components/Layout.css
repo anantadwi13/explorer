@@ -116,6 +116,11 @@
   color: var(--fg);
   border-color: var(--line);
 }
+.icon-btn[aria-pressed="true"] {
+  background: var(--bg-soft);
+  color: var(--accent);
+  border-color: var(--line);
+}
 
 /* ── shared button ───────────────────────────────────────────────────── */
 .btn {

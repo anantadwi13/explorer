@@ -185,3 +185,15 @@ export function MoonIcon(props: IconProps) {
     </svg>
   )
 }
+
+export function WrapIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+      stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 6h18"/>
+      <path d="M3 12h13a3 3 0 0 1 0 6h-3"/>
+      <path d="M16 15l-3 3 3 3"/>
+      <path d="M3 18h6"/>
+    </svg>
+  )
+}

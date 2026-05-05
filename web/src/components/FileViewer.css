@@ -76,6 +76,8 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   display: block;
+  flex: 1;
+  min-width: 0;
 }
 .text-body,
 .code-block {
@@ -84,11 +86,20 @@
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
+  color: var(--fg);
+}
+.text-body,
+.code-block.wrap-on {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
   overflow-x: hidden;
-  color: var(--fg);
+}
+.code-block.wrap-off {
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  overflow-x: auto;
 }
 .code-block code {
   font-family: inherit;

@@ -5,6 +5,7 @@ import { lowlight } from './syntax/grammars'
 interface Props {
   code: string
   language: string | null
+  wrap?: boolean
 }
 
 type HastNode = Root['children'][number]
@@ -26,7 +27,7 @@ function renderHastToReact(node: HastNode, key: number): ReactNode {
   return null
 }
 
-export default function CodeBlock({ code, language }: Props) {
+export default function CodeBlock({ code, language, wrap = true }: Props) {
   const isRegistered = language !== null && lowlight.registered(language)
 
   let inner: ReactNode
@@ -44,8 +45,10 @@ export default function CodeBlock({ code, language }: Props) {
     ? `hljs language-${language}`
     : 'hljs'
 
+  const preClass = `code-block ${wrap ? 'wrap-on' : 'wrap-off'}`
+
   return (
-    <pre className="code-block">
+    <pre className={preClass}>
       <code className={codeClass}>{inner}</code>
     </pre>
   )
