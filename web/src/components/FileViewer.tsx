@@ -4,12 +4,13 @@ import * as api from '../api/client'
 import { INLINE_CAP } from '../api/client'
 import type { MetaResponse, ApiError, TreeEntry } from '../api/types'
 import { useLayout } from './LayoutContext'
+import { useWrap } from '../hooks/useWrap'
 import { iconForFile } from './iconForFile'
 import MarkdownRenderer from './MarkdownRenderer'
 import CodeBlock from './CodeBlock'
 import { extToLanguage } from './syntax/grammars'
 import { formatSize, formatDate } from './format'
-import { BackIcon, LinkIcon, DownloadIcon } from './icons'
+import { BackIcon, LinkIcon, DownloadIcon, WrapIcon } from './icons'
 import './FileViewer.css'
 
 interface Props {
@@ -22,6 +23,7 @@ export default function FileViewer({ path }: Props) {
   const [error, setError] = useState<ApiError | null>(null)
   const navigate = useNavigate()
   const { showToast } = useLayout()
+  const [wrap, setWrap] = useWrap()
 
   // Loading: waiting on meta, or — for text/markdown — also on the /raw/ content fetch.
   // Image and non-previewable kinds need only meta.
@@ -130,6 +132,8 @@ export default function FileViewer({ path }: Props) {
 
   if (!meta) return null
 
+  const showWrapToggle = meta.kind === 'text'
+
   return (
     <div className="file-detail">
       <FileHead
@@ -142,13 +146,18 @@ export default function FileViewer({ path }: Props) {
         onBack={goBack}
         onCopyLink={onCopyLink}
         showDownload
+        wrapToggle={
+          showWrapToggle
+            ? { wrap, onToggle: () => setWrap(!wrap) }
+            : undefined
+        }
       />
       <div className={`vw vw-${meta.kind}`}>
         {meta.kind === 'markdown' && (
           <MarkdownRenderer content={content!} currentPath={path} />
         )}
         {meta.kind === 'text' && (
-          <CodeBlock code={content!} language={extToLanguage(path)} />
+          <CodeBlock code={content!} language={extToLanguage(path)} wrap={wrap} />
         )}
         {meta.kind === 'image' && (
           <img src={`/raw/${path}`} alt={filename} />
@@ -168,6 +177,7 @@ interface HeadProps {
   onBack: () => void
   onCopyLink: () => void
   showDownload: boolean
+  wrapToggle?: { wrap: boolean; onToggle: () => void }
 }
 
 function FileHead({
@@ -180,6 +190,7 @@ function FileHead({
   onBack,
   onCopyLink,
   showDownload,
+  wrapToggle,
 }: HeadProps) {
   const sub: string[] = []
   if (mime) sub.push(mime)
@@ -207,6 +218,17 @@ function FileHead({
         </div>
       </div>
       <div className="file-head-actions">
+        {wrapToggle && (
+          <button
+            className="icon-btn"
+            onClick={wrapToggle.onToggle}
+            aria-pressed={wrapToggle.wrap}
+            aria-label={wrapToggle.wrap ? 'Wrap lines: on' : 'Wrap lines: off'}
+            title={wrapToggle.wrap ? 'Wrap lines: on' : 'Wrap lines: off'}
+          >
+            <WrapIcon />
+          </button>
+        )}
         <button
           className="icon-btn"
           onClick={onCopyLink}

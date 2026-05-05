@@ -22,5 +22,7 @@ web/node_modules/
 .DS_Store
 Thumbs.db
 
-# Release archives (produced by `make release-snapshot` / GitHub Actions)
-dist/
+# Release archives (produced by `make release-snapshot` / GitHub Actions).
+# Anchored at the repo root so the SPA build output at
+# `internal/server/ui/dist/` (which IS committed; see note above) is not ignored.
+/dist/

@@ -34,4 +34,25 @@ describe('CodeBlock', () => {
     const spans = container.querySelectorAll('[class*="hljs-"]')
     expect(spans.length).toBeGreaterThan(0)
   })
+
+  it('defaults to wrap-on when wrap prop is omitted', () => {
+    const { container } = render(<CodeBlock code="x" language={null} />)
+    const pre = container.querySelector('pre')
+    expect(pre).not.toBeNull()
+    expect(pre!.classList.contains('wrap-on')).toBe(true)
+    expect(pre!.classList.contains('wrap-off')).toBe(false)
+  })
+
+  it('applies wrap-off when wrap=false', () => {
+    const { container } = render(<CodeBlock code="x" language={null} wrap={false} />)
+    const pre = container.querySelector('pre')
+    expect(pre!.classList.contains('wrap-off')).toBe(true)
+    expect(pre!.classList.contains('wrap-on')).toBe(false)
+  })
+
+  it('applies wrap-on when wrap=true', () => {
+    const { container } = render(<CodeBlock code="x" language={null} wrap={true} />)
+    const pre = container.querySelector('pre')
+    expect(pre!.classList.contains('wrap-on')).toBe(true)
+  })
 })
