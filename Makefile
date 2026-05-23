@@ -1,4 +1,4 @@
-.PHONY: web web-commit build dev-web dev-server run clean test docker release-snapshot checksums
+.PHONY: web web-commit build dev-web dev-server dev-git-server sample-repo run clean test e2e e2e-deps docker release-snapshot checksums
 
 # Cross-compile matrix mirrored in .github/workflows/release.yml and pr-build.yml.
 RELEASE_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
@@ -22,6 +22,16 @@ dev-web:
 # Build and run the Go server without embedding (use alongside dev-web)
 dev-server:
 	go build -o explorer ./cmd/explorer && ./explorer ./testdata
+
+# Build and run the Go server pointed at the generated sample git repo. Useful
+# for manual testing of the git-reader capability. Run `make sample-repo` first.
+dev-git-server: sample-repo
+	go build -o explorer ./cmd/explorer && ./explorer ./testdata/sample-repo
+
+# (Re)generate testdata/sample-repo with deterministic commits — used by the
+# Playwright e2e suite and `make dev-git-server`. The repo is gitignored.
+sample-repo:
+	./scripts/sample-repo.sh
 
 # Build then run the binary against testdata/
 run: build
@@ -78,6 +88,16 @@ checksums:
 # Run all Go tests (excluding web/node_modules)
 test:
 	go test ./cmd/... ./internal/...
+
+# Playwright e2e suite. Spawns the built binary against testdata/sample-repo
+# (and against ./testdata for the no-repo project). Requires `make e2e-deps`
+# the first time on a fresh machine to install browser system libraries.
+e2e: build sample-repo
+	cd e2e && npm ci && npx playwright install chromium && npx playwright test
+
+# One-time install of Playwright browser deps. Requires sudo on Linux.
+e2e-deps:
+	cd e2e && npm ci && sudo npx playwright install-deps chromium && npx playwright install chromium
 
 # Build and tag the Docker image
 docker:

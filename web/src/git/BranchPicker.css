@@ -1,0 +1,96 @@
+.branch-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.branch-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--bg-elev, transparent);
+  color: var(--fg, #ddd);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: var(--radius-2, 6px);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 32px;
+  max-width: 220px;
+  overflow: hidden;
+}
+
+.branch-picker-trigger:hover {
+  border-color: var(--border-strong, #444);
+}
+
+.branch-picker-icon {
+  font-size: 0.95rem;
+  color: var(--fg-muted, #888);
+}
+
+.branch-picker-label {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 14ch;
+}
+
+.branch-picker-chevron {
+  color: var(--fg-muted, #888);
+  font-size: 0.7rem;
+}
+
+.branch-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--bg-1, #1a1a1a);
+  border: 1px solid var(--border, #2a2a2a);
+  border-radius: var(--radius-2, 6px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 0.25rem;
+}
+
+.branch-picker-section {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted, #888);
+  padding: 0.5rem 0.5rem 0.25rem;
+}
+
+.branch-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.85rem;
+  color: var(--fg, #ddd);
+  border-radius: 4px;
+  min-height: 32px;
+}
+
+.branch-picker-item:hover,
+.branch-picker-item:focus-visible {
+  background: var(--bg-2, rgba(255, 255, 255, 0.05));
+}
+
+.branch-picker-item.is-active {
+  color: var(--color-diff-add-fg, #4ade80);
+}
+
+.branch-picker-empty {
+  padding: 0.5rem;
+  color: var(--fg-muted, #888);
+  font-size: 0.85rem;
+}

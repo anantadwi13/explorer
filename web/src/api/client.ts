@@ -1,4 +1,15 @@
-import type { ApiResult, MetaResponse, TreeResponse } from './types'
+import type {
+  ApiResult,
+  GitCommit,
+  GitCommits,
+  GitInfo,
+  GitPatch,
+  GitPatchSource,
+  GitRefs,
+  GitStatus,
+  MetaResponse,
+  TreeResponse,
+} from './types'
 
 // Inline preview cap mirrors `inlineSizeCap` in internal/server/api.go and
 // the `Inline render size cap falls through to non-previewable` requirement
@@ -40,4 +51,67 @@ export function tree(path: string): Promise<ApiResult<TreeResponse>> {
 export function meta(path: string): Promise<ApiResult<MetaResponse>> {
   const encoded = encodeURIComponent(path)
   return apiGet<MetaResponse>(`/api/meta?path=${encoded}`)
+}
+
+// --- git-reader helpers ---
+// Refs and shas can contain slashes (`feature/x`) so every parameter that
+// can carry one is passed through URLSearchParams' built-in encoding.
+
+export function getGitInfo(): Promise<ApiResult<GitInfo>> {
+  return apiGet<GitInfo>('/api/git/info')
+}
+
+export function getGitRefs(): Promise<ApiResult<GitRefs>> {
+  return apiGet<GitRefs>('/api/git/refs')
+}
+
+export interface CommitsParams {
+  ref?: string
+  cursor?: string
+  limit?: number
+}
+
+export function getGitCommits(params: CommitsParams = {}): Promise<ApiResult<GitCommits>> {
+  const qs = new URLSearchParams()
+  if (params.ref) qs.set('ref', params.ref)
+  if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.limit) qs.set('limit', String(params.limit))
+  const query = qs.toString()
+  return apiGet<GitCommits>('/api/git/commits' + (query ? '?' + query : ''))
+}
+
+export interface CommitParams {
+  sha: string
+  fileOffset?: number
+  fileLimit?: number
+}
+
+export function getGitCommit(params: CommitParams): Promise<ApiResult<GitCommit>> {
+  const qs = new URLSearchParams()
+  qs.set('sha', params.sha)
+  if (params.fileOffset !== undefined) qs.set('file_offset', String(params.fileOffset))
+  if (params.fileLimit !== undefined) qs.set('file_limit', String(params.fileLimit))
+  return apiGet<GitCommit>('/api/git/commit?' + qs.toString())
+}
+
+export function getGitStatus(): Promise<ApiResult<GitStatus>> {
+  return apiGet<GitStatus>('/api/git/status')
+}
+
+export interface PatchParams {
+  source: GitPatchSource
+  sha?: string // required iff source === 'commit'
+  path: string
+  hunkOffset?: number
+  hunkLimit?: number
+}
+
+export function getGitPatch(params: PatchParams): Promise<ApiResult<GitPatch>> {
+  const qs = new URLSearchParams()
+  qs.set('source', params.source)
+  if (params.sha) qs.set('sha', params.sha)
+  qs.set('path', params.path)
+  if (params.hunkOffset !== undefined) qs.set('hunk_offset', String(params.hunkOffset))
+  if (params.hunkLimit !== undefined) qs.set('hunk_limit', String(params.hunkLimit))
+  return apiGet<GitPatch>('/api/git/patch?' + qs.toString())
 }

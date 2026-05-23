@@ -1,5 +1,7 @@
 import TreeSidebar from './TreeSidebar'
 import { CloseIcon } from './icons'
+import BranchPicker from '../git/BranchPicker'
+import ChangesBadge from '../git/ChangesBadge'
 
 interface Props {
   isOpen: boolean
@@ -26,6 +28,12 @@ export function LayoutSidebar({ isOpen, isMobileDrawer, onClose }: Props) {
           </button>
         )}
       </div>
+      {isMobileDrawer && (
+        <div className="sidebar-git">
+          <BranchPicker />
+          <ChangesBadge />
+        </div>
+      )}
       <div className="sidebar-section">Folders</div>
       <div className="sidebar-tree">
         <TreeSidebar />

@@ -62,6 +62,16 @@
 }
 .sidebar .sidebar-close { display: none; }
 
+/* Drawer-only header row that surfaces the BranchPicker and ChangesBadge
+   when the SPA is in mobile mode. The desktop toolbar carries the same
+   affordances; we never put them in the cramped mobile top bar. */
+.sidebar-git {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 16px 12px;
+}
+
 .sidebar-section {
   padding: 14px 16px 6px;
   font-size: 11px;

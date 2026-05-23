@@ -181,6 +181,20 @@ explorer serving /home/alice/docs
 - Deep-linkable URLs for every folder and file
 - Light / dark / system theme toggle
 - Single static binary — no runtime dependencies
+- **Git browsing** when the served root is a git repository: commit history, branch/tag picker, per-commit diffs (lazy hunk loading), and working-tree status
+
+## Git browsing
+
+When `explorer` is pointed at a directory whose top level contains a `.git` entry (either a directory or a worktree pointer file), it exposes a small read-only git surface alongside the file browser:
+
+- **Branch picker** in the toolbar (desktop) or drawer header (mobile) — switch between branches and tags, jump to local changes.
+- **Commits list** at `/git/commits` (or `/git/commits?ref=<branch-or-tag>`) — paginated by cursor, newest first.
+- **Commit detail** at `/git/commits/<sha>` — header, parents, file list (paginated 50 at a time), per-file diffs lazily loaded in 3-hunk batches.
+- **Working-tree status** at `/git/status` — staged / unstaged / untracked files; first three diffs auto-expand.
+
+The capability is **strictly gated** on a `.git` entry at the served root itself — ancestor `.git` directories are not walked. When the gate is not satisfied, every `/api/git/*` endpoint returns `not_a_repo` and the SPA hides all git affordances, so users of non-repo directories see exactly no change.
+
+Everything is **read-only**: no `checkout`, `commit`, `stage`, `fetch`, `push`, or any other write operation exists. The implementation uses [go-git](https://github.com/go-git/go-git), so the binary still has no runtime dependency on the `git` CLI.
 
 ## Security model
 
@@ -203,7 +217,17 @@ make dev-web          # starts the Vite dev server on :5173 (run alongside dev-s
 make test             # go test ./cmd/... ./internal/...
 make web-commit       # rebuild the embedded SPA and stage internal/server/ui/dist/
 make clean            # remove ./explorer and internal/server/ui/dist
+
+# Git-reader capability
+make sample-repo      # (re)generate ./testdata/sample-repo with deterministic commits
+make dev-git-server   # run the Go binary against the sample git repo (depends on sample-repo)
+make e2e              # build + sample-repo + run Playwright e2e suite (chromium)
+make e2e-deps         # one-time: install playwright browser system libs (needs sudo on linux)
 ```
+
+### End-to-end tests
+
+The `make e2e` target builds the binary, regenerates the sample-repo fixture (deterministic SHAs), and runs Playwright against two instances of the binary — one pointed at the sample repo, one at a non-repo directory — to exercise the git surface end to end. On a fresh machine run `make e2e-deps` once to install the browser system libraries (this uses `sudo`). The Playwright workspace lives under `e2e/` and is independent of the SPA's `package.json` so SPA builds don't pull Playwright as a transitive dev dep.
 
 `internal/server/ui/dist/` is committed to source control so module-proxy installs (`go install`, `go run`) ship a working SPA. **Run `make web-commit` whenever you change anything under `web/src/`** so the embedded build stays in sync.
 

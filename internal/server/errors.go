@@ -8,6 +8,18 @@ import (
 	"github.com/anantadwi13/explorer/internal/server/resolver"
 )
 
+// Typed error kinds. The set mirrors the TS `ApiError` union in
+// web/src/api/types.ts — keep both sides in sync when adding new ones.
+const (
+	errKindInternal = "internal_error"
+	errKindNotFound = "not_found"
+
+	// git-reader additions.
+	errKindNotARepo   = "not_a_repo"
+	errKindUnknownRef = "unknown_ref"
+	errKindBadRequest = "bad_request"
+)
+
 type apiError struct {
 	Error   string `json:"error"`
 	Message string `json:"message"`
@@ -26,7 +38,7 @@ func writeResolveError(w http.ResponseWriter, err error) {
 		writeError(w, string(re.Kind), re.Message, status)
 		return
 	}
-	writeError(w, "internal_error", err.Error(), http.StatusInternalServerError)
+	writeError(w, errKindInternal, err.Error(), http.StatusInternalServerError)
 }
 
 func resolveErrorStatus(kind resolver.ErrorKind) int {

@@ -75,7 +75,7 @@ The `openspec/` directory holds spec-driven-development artifacts. Behavior cont
 
 ## Conventions
 
-- Go module path: `github.com/anantadwi13/explorer`. Go 1.24+. No external Go dependencies — stdlib only.
+- Go module path: `github.com/anantadwi13/explorer`. Go 1.24+. Stdlib only, with one documented exception: `github.com/go-git/go-git/v5` (used by the `internal/server/git` package to back the `git-reader` capability). Do not add new dependencies for anything else.
 - The Go binary is committed at the repo root after a build (`./explorer`); `make clean` removes it.
 - Tests live next to code (`*_test.go`); the resolver and mime packages have focused unit tests, server has black-box `_test` tests via `httptest`.
 - `testdata/` is the fixture directory used by `make dev-server` / `make run` — feel free to drop sample files there for manual testing.

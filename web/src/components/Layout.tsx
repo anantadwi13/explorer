@@ -67,8 +67,47 @@ export default function Layout() {
     isFileRouteRef.current = isFileRoute
   })
 
-  // Keyboard shortcuts (window-level). Single listener installed at mount.
+  // Track the last folder route we visited so the git-page Escape handler can
+  // jump back to it. Updated whenever the path changes and the new path is a
+  // directory-browser folder URL (`/` or `/view/*/`).
+  const lastFolderRouteRef = useRef('/')
+  // Also mirror the live location into a ref so the (mount-once) keyboard
+  // handler reads the *current* route — `window.location` doesn't track
+  // MemoryRouter in tests and would lag behind real navigations between
+  // mount and the listener's first fire.
+  const locationRef = useRef(location)
   useEffect(() => {
+    locationRef.current = location
+    if (!isGitRoute(location.pathname) && !isFileRoute) {
+      lastFolderRouteRef.current = location.pathname
+    }
+  }, [location, isFileRoute])
+
+  // Keyboard shortcuts (window-level). Single listener installed at mount.
+  // Directory-browser routes (/, /view/*) follow the original rules; git
+  // routes (/git/*) override per the spec — `/` is no-op, Escape moves "up
+  // one level" within git nav, Backspace matches Escape on detail and is
+  // no-op (with browser-default suppressed) on the top-level git pages.
+  useEffect(() => {
+    const goUpFromCurrent = () => {
+      const path = currentPath(locationRef.current.pathname)
+      if (!path) return
+      const parts = path.split('/').filter(Boolean)
+      parts.pop()
+      const next = parts.length === 0 ? '/' : `/view/${parts.join('/')}/`
+      navigate(next)
+    }
+    const goBackFromGit = () => {
+      const loc = locationRef.current
+      if (loc.pathname.startsWith('/git/commits/')) {
+        // detail → list (preserve ?ref= if any)
+        navigate(`/git/commits${loc.search || ''}`)
+        return
+      }
+      // list or status → most recent folder, fall back to /
+      navigate(lastFolderRouteRef.current || '/')
+    }
+
     const onKey = (e: KeyboardEvent) => {
       const tgt = e.target as HTMLElement | null
       const inField =
@@ -77,32 +116,56 @@ export default function Layout() {
           tgt.tagName === 'TEXTAREA' ||
           tgt.isContentEditable)
 
+      const path = locationRef.current.pathname
+      const onGitRoute = isGitRoute(path)
+
       if (e.key === '/' && !inField) {
+        if (onGitRoute) {
+          // Spec: `/` is a no-op on git pages (no search field present).
+          e.preventDefault()
+          return
+        }
         if (searchRef.current) {
           e.preventDefault()
           searchRef.current.focus()
         }
-      } else if (e.key === 'Escape') {
+        return
+      }
+
+      if (e.key === 'Escape') {
+        if (inField) return
+        if (onGitRoute) {
+          goBackFromGit()
+          return
+        }
         if (searchValueRef.current) {
           setSearch('')
         } else if (isFileRouteRef.current) {
           goUpFromCurrent()
         }
-      } else if (e.key === 'Backspace' && !inField && !isFileRouteRef.current) {
-        const p = currentPath(window.location.pathname)
-        if (p) {
-          e.preventDefault()
-          goUpFromCurrent()
+        return
+      }
+
+      if (e.key === 'Backspace' && !inField) {
+        if (onGitRoute) {
+          if (path.startsWith('/git/commits/')) {
+            e.preventDefault()
+            goBackFromGit()
+          } else {
+            // Top-level git pages: no-op, but suppress the browser default
+            // (back-navigation) for parity with folder-page behaviour.
+            e.preventDefault()
+          }
+          return
+        }
+        if (!isFileRouteRef.current) {
+          const p = currentPath(path)
+          if (p) {
+            e.preventDefault()
+            goUpFromCurrent()
+          }
         }
       }
-    }
-    const goUpFromCurrent = () => {
-      const path = currentPath(window.location.pathname)
-      if (!path) return
-      const parts = path.split('/').filter(Boolean)
-      parts.pop()
-      const next = parts.length === 0 ? '/' : `/view/${parts.join('/')}/`
-      navigate(next)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -180,4 +243,8 @@ function currentPath(pathname: string): string {
     return pathname.slice('/view/'.length).replace(/\/$/, '')
   }
   return ''
+}
+
+function isGitRoute(pathname: string): boolean {
+  return pathname === '/git' || pathname.startsWith('/git/')
 }
