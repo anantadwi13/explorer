@@ -2,7 +2,6 @@ import { useLocation } from 'react-router-dom'
 import { useLayout } from './LayoutContext'
 import Breadcrumbs from './Breadcrumbs'
 import SearchBox from './SearchBox'
-import ViewToggle from './ViewToggle'
 import SettingsMenu from './SettingsMenu'
 import BranchPicker from '../git/BranchPicker'
 import ChangesBadge from '../git/ChangesBadge'
@@ -13,36 +12,30 @@ export default function Toolbar() {
   const { search, setSearch, searchRef, isFileRoute } = useLayout()
 
   const path = currentPath(location.pathname)
-  // Folder controls (search + view toggle) only show on web-ui folder
-  // routes. On /git/* pages we still want the breadcrumbs (showing empty
-  // path here) and the BranchPicker/ChangesBadge.
+  // Search only shows on web-ui folder routes. On /git/* and file routes
+  // the breadcrumb + git surface (BranchPicker/ChangesBadge) still render,
+  // but the search field would have nothing to filter.
   const showFolderControls = !isFileRoute && !isGitRoute(location.pathname)
 
   return (
     <div className="toolbar">
-      <Breadcrumbs path={path} />
-      <div className="toolbar-spacer" />
-      {/*
-        Desktop-only: git affordances. On mobile (<800px) the spec says these
-        live in the sidebar drawer header instead — see LayoutSidebar. The
-        CSS hides this wrapper at the same 800px breakpoint Layout uses to
-        switch between desktop and mobile chrome.
-      */}
-      <div className="toolbar-git">
-        <BranchPicker />
-        <ChangesBadge />
-      </div>
-      {showFolderControls && (
-        <>
+      <div className="toolbar-controls">
+        <div className="toolbar-git">
+          <BranchPicker />
+          <ChangesBadge />
+        </div>
+        {showFolderControls && (
           <SearchBox
             value={search}
             onChange={setSearch}
             inputRef={searchRef}
           />
-          <ViewToggle />
-        </>
-      )}
-      <SettingsMenu />
+        )}
+        <SettingsMenu />
+      </div>
+      <div className="toolbar-path">
+        <Breadcrumbs path={path} />
+      </div>
     </div>
   )
 }

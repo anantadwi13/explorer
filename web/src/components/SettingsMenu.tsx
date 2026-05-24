@@ -3,17 +3,21 @@ import { useTheme } from '../hooks/useTheme'
 import type { ThemeChoice } from '../hooks/useTheme'
 import { useDensity } from '../hooks/useDensity'
 import type { Density } from '../hooks/useDensity'
+import { useViewMode } from '../hooks/useViewMode'
+import type { ViewMode } from '../hooks/useViewMode'
 import { useClickOutside } from '../hooks/useClickOutside'
 import { SettingsIcon } from './icons'
 import './SettingsMenu.css'
 
 const THEME_OPTIONS: ThemeChoice[] = ['light', 'dark', 'system']
 const DENSITY_OPTIONS: Density[] = ['compact', 'regular', 'comfy']
+const VIEW_OPTIONS: ViewMode[] = ['list', 'grid']
 
 export default function SettingsMenu() {
   const [open, setOpen] = useState(false)
   const { choice: theme, setChoice: setTheme } = useTheme()
   const [density, setDensity] = useDensity()
+  const [view, setView] = useViewMode()
 
   const ref = useClickOutside<HTMLDivElement>(open, () => setOpen(false))
 
@@ -65,6 +69,22 @@ export default function SettingsMenu() {
                   aria-checked={density === opt}
                   className={`settings-opt${density === opt ? ' is-on' : ''}`}
                   onClick={() => setDensity(opt)}
+                >
+                  {capitalize(opt)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-section">
+            <div className="settings-label">View</div>
+            <div className="settings-options" role="radiogroup" aria-label="View">
+              {VIEW_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  role="radio"
+                  aria-checked={view === opt}
+                  className={`settings-opt${view === opt ? ' is-on' : ''}`}
+                  onClick={() => setView(opt)}
                 >
                   {capitalize(opt)}
                 </button>

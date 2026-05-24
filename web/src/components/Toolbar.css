@@ -1,13 +1,25 @@
 .toolbar {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   padding: 14px 24px;
   border-bottom: 1px solid var(--line);
   background: var(--bg-panel);
+}
+
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
   flex-wrap: wrap;
 }
-.toolbar-spacer { flex: 1; }
+
+.toolbar-path {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
 
 .toolbar-git {
   display: inline-flex;
@@ -15,14 +27,27 @@
   gap: 8px;
 }
 
-@media (max-width: 800px) {
+/* 799.98px so this matches the JS `(min-width: 800px)` breakpoint exactly;
+   at viewport=800 the JS treats it as desktop (no topbar SettingsMenu) so
+   the toolbar's SettingsMenu must stay visible. */
+@media (max-width: 799.98px) {
   .toolbar {
+    flex-direction: row;
+    flex-wrap: wrap;
     padding: 10px 14px;
     gap: 8px;
   }
-  .toolbar .search { width: 100%; order: 10; }
-  .toolbar-spacer { display: none; }
-  /* On mobile the git affordances live in the sidebar drawer header — see
-     LayoutSidebar's `.sidebar-git`. Keep them out of the breadcrumbs row. */
+  /* Promote the controls row's children to be direct flex children of
+     `.toolbar` on mobile so SearchBox can keep its `order: 10` full-width
+     row pattern. The git affordances and the settings menu live elsewhere
+     on mobile (drawer header + topbar respectively), so we hide them. */
+  .toolbar-controls { display: contents; }
   .toolbar-git { display: none; }
+  .toolbar .settings { display: none; }
+  .toolbar-path { flex: 1; }
+  /* On mobile, SearchBox is the first toolbar row (above the breadcrumb),
+     directly under the topbar. Source order in `.toolbar` (via the
+     display:contents promotion of `.toolbar-controls`) is search first,
+     then `.toolbar-path`, so default flex order is all we need. */
+  .toolbar .search { width: 100%; }
 }

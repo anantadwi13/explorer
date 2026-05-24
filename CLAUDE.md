@@ -86,3 +86,4 @@ The `git-reader` and `release-distribution` capabilities (`openspec/specs/git-re
 - The Go binary is committed at the repo root after a build (`./explorer`); `make clean` removes it.
 - Tests live next to code (`*_test.go`); the resolver and mime packages have focused unit tests, server has black-box `_test` tests via `httptest`.
 - `testdata/` is the fixture directory used by `make dev-server` / `make run` — feel free to drop sample files there for manual testing.
+- **Demo GIFs (`docs/desktop.gif`, `docs/mobile.gif`) must be regenerated in the same change as any visible SPA UI update.** Both GIFs are embedded in the README; if the UI drifts ahead of them, new visitors see an outdated product. Use the `record-demo-gif` skill (the only supported entry point) and commit the regenerated GIFs alongside the `web/src/` changes — never defer to a follow-up.

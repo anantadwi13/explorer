@@ -1,12 +1,12 @@
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { LayoutContext } from './LayoutContext'
-import { useTheme } from '../hooks/useTheme'
 import { useDensity } from '../hooks/useDensity'
 import { LayoutSidebar } from './LayoutSidebar'
 import Toolbar from './Toolbar'
 import Toast from './Toast'
-import { MenuIcon, SunIcon, MoonIcon } from './icons'
+import SettingsMenu from './SettingsMenu'
+import { MenuIcon } from './icons'
 import './Layout.css'
 
 const DESKTOP_QUERY = '(min-width: 800px)'
@@ -14,7 +14,6 @@ const DESKTOP_QUERY = '(min-width: 800px)'
 export default function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { choice: themeChoice, setChoice: setThemeChoice } = useTheme()
   // density hook self-applies to <html>; we don't need the value here
   useDensity()
 
@@ -202,15 +201,7 @@ export default function Layout() {
               <MenuIcon />
             </button>
             <div className="topbar-title">Explorer</div>
-            <button
-              className="icon-btn"
-              onClick={() =>
-                setThemeChoice(themeChoice === 'dark' ? 'light' : 'dark')
-              }
-              aria-label="Toggle theme"
-            >
-              {themeChoice === 'dark' ? <SunIcon /> : <MoonIcon />}
-            </button>
+            <SettingsMenu />
           </header>
         )}
 
