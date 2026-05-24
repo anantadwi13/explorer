@@ -284,7 +284,7 @@ The server SHALL enforce a defensive bound: a single response SHALL NOT include 
 
 For binary files, the server SHALL respond with `is_binary: true`, `total_hunks: 0`, `hunks: []`, `next_hunk_offset: null`, `more_available: false`. The SPA never expands binary files inline.
 
-The `path` parameter is a repo-relative path interpreted against git's object tree. It is NOT a filesystem path and is NOT routed through the directory-browser `resolver.Resolve` chokepoint. Path-escape (`..`, absolute paths) is prevented by go-git's pathspec rules, which forbid such paths at the lookup layer.
+The `path` parameter is a repo-relative path interpreted against git's object tree. It is NOT a filesystem path and is NOT routed through the path-resolver `resolver.Resolve` chokepoint. Path-escape (`..`, absolute paths) is prevented by go-git's pathspec rules, which forbid such paths at the lookup layer.
 
 #### Scenario: First batch of hunks for a commit file
 
@@ -354,7 +354,7 @@ The `path` parameter is a repo-relative path interpreted against git's object tr
 
 The git-reader capability SHALL extend the JSON-error union with two new error kinds: `not_a_repo` (HTTP 404 — the served root has no `.git` at its top level) and `unknown_ref` (HTTP 404 — the requested ref, branch, tag, or sha does not exist in the repository).
 
-Existing error kinds (`not_found`, `internal_error`, etc., as defined by the directory-browser capability) SHALL be reused where applicable on `/api/git/*`. The SPA's `ApiError` union SHALL mirror these additions.
+Existing error kinds (`not_found`, `internal_error`, etc., as defined by the http-api capability) SHALL be reused where applicable on `/api/git/*`. The SPA's `ApiError` union SHALL mirror these additions.
 
 Error responses SHALL follow the existing `{error: "<kind>", message: "..."}` JSON shape with the appropriate HTTP status code.
 
@@ -564,7 +564,7 @@ The SPA SHALL serve a working-tree status view at `/git/status` that renders the
 
 The Staged and Unstaged sections SHALL render file rows using the same collapsible-card pattern as the commit detail view, with the same lazy-hunk loading via `/api/git/patch?source=staged|unstaged&path=<path>`. The first 3 entries (combined across staged + unstaged in source order) SHALL be auto-expanded on first paint.
 
-The Untracked section SHALL render each entry as a non-expandable row whose path is a link to the directory-browser file viewer at `/view/<path>`. Activating the link SHALL open the target in a new browser tab (`target="_blank"` with `rel="noopener noreferrer"`), so the user keeps the status page in their original tab. No diff is rendered for untracked entries (the file is not tracked by git).
+The Untracked section SHALL render each entry as a non-expandable row whose path is a link to the web-ui file viewer at `/view/<path>`. Activating the link SHALL open the target in a new browser tab (`target="_blank"` with `rel="noopener noreferrer"`), so the user keeps the status page in their original tab. No diff is rendered for untracked entries (the file is not tracked by git).
 
 When all three sections are empty, the view SHALL render a "No local changes" empty state.
 
@@ -603,7 +603,7 @@ In commit detail and status views, rendered hunks SHALL follow these rules:
 - Source lines SHALL be syntax-highlighted using the same shared `lowlight` instance the file viewer uses (`web/src/components/syntax/grammars.ts`), with the language detected from the file path via the same `extToLanguage` helper. Highlighting is performed *per line* (the SPA does not have the surrounding file context), which is a known approximation for multi-line constructs (e.g. long string literals) but matches how widely-used diff viewers behave. When the file path has no registered grammar (`extToLanguage` returns `null`), lines render as plain monospace text.
 - The single-character `+`/`−`/space marker SHALL remain outside the highlighted span so its colour is driven by the diff palette, not the language grammar.
 - Long lines wrap inside the hunk block by default (no horizontal scroll on the page).
-- The commit detail and status views SHALL expose a wrap/no-wrap toggle button in their page header (same `WrapIcon` button used by the directory-browser file viewer). The current wrap state SHALL be read from and written to the existing `localStorage["explorer.wrap"]` key via the existing `useWrap` hook — so toggling wrap inside the file viewer and inside the diff views shares one global preference (single key, no surprise). When wrap is OFF, hunk bodies SHALL allow horizontal scroll instead of wrapping (`white-space: pre` + `overflow-x: auto`). When wrap is ON (the default), behaviour matches the previous bullet (no horizontal scroll on the page).
+- The commit detail and status views SHALL expose a wrap/no-wrap toggle button in their page header (same `WrapIcon` button used by the web-ui file viewer). The current wrap state SHALL be read from and written to the existing `localStorage["explorer.wrap"]` key via the existing `useWrap` hook — so toggling wrap inside the file viewer and inside the diff views shares one global preference (single key, no surprise). When wrap is OFF, hunk bodies SHALL allow horizontal scroll instead of wrapping (`white-space: pre` + `overflow-x: auto`). When wrap is ON (the default), behaviour matches the previous bullet (no horizontal scroll on the page).
 
 #### Scenario: Line backgrounds by theme
 
@@ -641,15 +641,15 @@ In commit detail and status views, rendered hunks SHALL follow these rules:
 - **AND** the preference persists across page reloads via `localStorage["explorer.wrap"]`
 - **AND** the file viewer (when next opened on a text file) reads the same preference, so the wrap state is shared across both surfaces
 
-#### Scenario: Wrap toggle does not render on directory-browser routes
+#### Scenario: Wrap toggle does not render on web-ui routes
 
-- **WHEN** the SPA is on a directory-browser folder URL (`/` or `/view/<path>/`)
+- **WHEN** the SPA is on a web-ui folder URL (`/` or `/view/<path>/`)
 - **THEN** no diff wrap toggle is present in the toolbar
 - **AND** the existing file-viewer wrap toggle (for `kind === 'text'` files) is unchanged
 
 ### Requirement: Git surfaces use the documented SPA design tokens
 
-All git-reader SPA surfaces — `BranchPicker`, `ChangesBadge`, `FileDiffCard`, `DiffHunk` chrome (the hunk container, header, borders, and pager — distinct from the +/− line-tint backgrounds covered by the "Diff rendering rules" requirement), `CommitsListPage`, `CommitDetailPage`, and `StatusPage` — SHALL paint their backgrounds, borders, foreground text, padding, radii, shadows, and fonts using the documented SPA design-token vocabulary defined in the `directory-browser` capability's "SPA design tokens" requirement.
+All git-reader SPA surfaces — `BranchPicker`, `ChangesBadge`, `FileDiffCard`, `DiffHunk` chrome (the hunk container, header, borders, and pager — distinct from the +/− line-tint backgrounds covered by the "Diff rendering rules" requirement), `CommitsListPage`, `CommitDetailPage`, and `StatusPage` — SHALL paint their backgrounds, borders, foreground text, padding, radii, shadows, and fonts using the documented SPA design-token vocabulary defined in the `web-ui` capability's "SPA design tokens" requirement.
 
 Git-reader component CSS SHALL NOT introduce ad-hoc token names via `var(--newname, <hardcoded-fallback>)` patterns. The historical regression that motivated this requirement (BranchPicker dropdown menu items invisible in light theme because `var(--bg-1, #1a1a1a)` fell back to a dark value) is the class of bug this rule prevents.
 
@@ -691,7 +691,7 @@ When a new git-reader surface is added in the future, it SHALL follow the same r
 
 On `/git/commits`, `/git/commits/<sha>`, and `/git/status`, keyboard shortcuts SHALL behave as follows (preserving the existing "inert when typing in an input/textarea" rule):
 
-- `/` SHALL be a no-op on git pages (the directory-browser search field is not present).
+- `/` SHALL be a no-op on git pages (the web-ui search field is not present).
 - `Escape` SHALL navigate "up one level" within git navigation: on `/git/commits/<sha>` it navigates to `/git/commits` (preserving the current `?ref=` if any); on `/git/commits` and `/git/status` it navigates to the most recently visited folder route (or the root `/` if none).
 - `Backspace` SHALL behave identically to `Escape` on `/git/commits/<sha>`. On the top-level git pages (`/git/commits`, `/git/status`) it SHALL be a no-op (the browser's default back-navigation SHALL be prevented to match the existing folder-page behaviour).
 
@@ -723,9 +723,9 @@ On `/git/commits`, `/git/commits/<sha>`, and `/git/status`, keyboard shortcuts S
 
 ### Requirement: Path semantics declaration
 
-The `path` parameter on `/api/git/*` endpoints SHALL be interpreted as a **repo-relative path into the git object tree**, NOT as a filesystem path. The directory-browser path-traversal resolver (`resolver.Resolve`) SHALL NOT be applied to `/api/git/*` requests. Escape (`..`, absolute paths) SHALL be prevented at the git lookup layer — go-git's pathspec rules reject such paths, returning a "file not found" outcome that the server SHALL map to the typed `not_found` error.
+The `path` parameter on `/api/git/*` endpoints SHALL be interpreted as a **repo-relative path into the git object tree**, NOT as a filesystem path. The path-resolver path-traversal resolver (`resolver.Resolve`) SHALL NOT be applied to `/api/git/*` requests. Escape (`..`, absolute paths) SHALL be prevented at the git lookup layer — go-git's pathspec rules reject such paths, returning a "file not found" outcome that the server SHALL map to the typed `not_found` error.
 
-This is a deliberate departure from the directory-browser security pattern. It is correct because: (a) git paths address a *different* object space than the filesystem; (b) requiring a working-tree resolution would break legitimate queries for files deleted in HEAD or files in arbitrary historical commits; (c) the analogous chokepoint exists inside go-git.
+This is a deliberate departure from the path-resolver security pattern. It is correct because: (a) git paths address a *different* object space than the filesystem; (b) requiring a working-tree resolution would break legitimate queries for files deleted in HEAD or files in arbitrary historical commits; (c) the analogous chokepoint exists inside go-git.
 
 #### Scenario: Filesystem path escape rejected at git layer
 
@@ -745,13 +745,13 @@ This is a deliberate departure from the directory-browser security pattern. It i
 The git-reader capability SHALL NOT, in this version, implement the following — they are explicit non-goals:
 
 - Any write operation (no `checkout`, `commit`, `stage`, `fetch`, `push`, `merge`, `rebase`, `cherry-pick`, etc.).
-- Submodule traversal (submodules SHALL appear as plain directories from the directory-browser side, with no nested git context).
+- Submodule traversal (submodules SHALL appear as plain directories from the web-ui side, with no nested git context).
 - Stash listing or browsing.
 - Blame.
 - Log search (searching commit messages, content, or paths).
 - Ref-to-ref compare (e.g. `main...feature`).
 - Tags as a routed view (tags SHALL appear in the refs dropdown only).
-- A "view file content at commit" endpoint. In particular, the existing `/raw/<path>` endpoint SHALL NOT be extended with a `?ref=` or `?sha=` query parameter — the directory-browser spec's existing requirement that `/raw/` "SHALL NOT inspect query parameters or headers to alter its behaviour" remains binding. If such a feature is added in the future, it SHALL be a new endpoint (e.g., `/api/git/blob`) rather than an extension of `/raw/`.
+- A "view file content at commit" endpoint. In particular, the existing `/raw/<path>` endpoint SHALL NOT be extended with a `?ref=` or `?sha=` query parameter — the http-api spec's existing requirement that `/raw/` "SHALL NOT inspect query parameters or headers to alter its behaviour" remains binding. If such a feature is added in the future, it SHALL be a new endpoint (e.g., `/api/git/blob`) rather than an extension of `/raw/`.
 - Caching of any kind. Every request SHALL invoke go-git fresh.
 - Live updates when the repository changes outside `explorer` (no SSE, no polling). A page reload picks up new state.
 

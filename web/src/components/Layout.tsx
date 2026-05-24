@@ -69,7 +69,7 @@ export default function Layout() {
 
   // Track the last folder route we visited so the git-page Escape handler can
   // jump back to it. Updated whenever the path changes and the new path is a
-  // directory-browser folder URL (`/` or `/view/*/`).
+  // web-ui folder URL (`/` or `/view/*/`).
   const lastFolderRouteRef = useRef('/')
   // Also mirror the live location into a ref so the (mount-once) keyboard
   // handler reads the *current* route — `window.location` doesn't track

@@ -13,8 +13,8 @@ import type {
 
 // Inline preview cap mirrors `inlineSizeCap` in internal/server/api.go and
 // the `Inline render size cap falls through to non-previewable` requirement
-// in the directory-browser spec. The SPA enforces this client-side: files
-// over the cap show the "too large" placeholder without a /raw/ fetch.
+// in the web-ui spec. The SPA enforces this client-side: files over the cap
+// show the "too large" placeholder without a /raw/ fetch.
 export const INLINE_CAP = 5 * 1024 * 1024
 
 async function apiGet<T>(url: string): Promise<ApiResult<T>> {

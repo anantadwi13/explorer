@@ -13,9 +13,9 @@ export default function Toolbar() {
   const { search, setSearch, searchRef, isFileRoute } = useLayout()
 
   const path = currentPath(location.pathname)
-  // Folder controls (search + view toggle) only show on directory-browser
-  // folder routes. On /git/* pages we still want the breadcrumbs (showing
-  // empty path here) and the BranchPicker/ChangesBadge.
+  // Folder controls (search + view toggle) only show on web-ui folder
+  // routes. On /git/* pages we still want the breadcrumbs (showing empty
+  // path here) and the BranchPicker/ChangesBadge.
   const showFolderControls = !isFileRoute && !isGitRoute(location.pathname)
 
   return (
