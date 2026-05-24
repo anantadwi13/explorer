@@ -1,5 +1,5 @@
 .status-page {
-  padding: var(--space-4, 1rem);
+  padding: 1rem;
   max-width: 1100px;
   margin: 0 auto;
 }
@@ -9,7 +9,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin: 0 0 var(--space-4, 1rem) 0;
+  margin: 0 0 1rem 0;
 }
 
 .status-page h2 {
@@ -19,18 +19,18 @@
 }
 
 .status-page h3 {
-  margin: var(--space-4, 1rem) 0 var(--space-2, 0.5rem) 0;
+  margin: 1rem 0 0.5rem 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--fg-muted, #aaa);
+  color: var(--fg-muted);
 }
 
 .status-empty {
-  color: var(--fg-muted, #888);
+  color: var(--fg-muted);
 }
 
 .status-loading {
-  color: var(--fg-muted, #888);
+  color: var(--fg-muted);
 }
 
 .status-list {
@@ -48,27 +48,27 @@
 }
 
 .status-untracked li {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 0.85rem;
-  background: var(--bg-elev, transparent);
-  border: 1px solid var(--border, #2a2a2a);
-  border-radius: var(--radius-2, 6px);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
 .status-untracked-link {
   display: block;
   padding: 0.4rem 0.75rem;
-  color: var(--fg, #ddd);
+  color: var(--fg);
   text-decoration: none;
   word-break: break-all;
 }
 
 .status-untracked-link:hover,
 .status-untracked-link:focus-visible {
-  background: var(--bg-2, rgba(255, 255, 255, 0.04));
+  background: var(--hover);
   text-decoration: underline;
 }
 
 .status-untracked li:hover {
-  border-color: var(--border-strong, #444);
+  border-color: var(--fg-muted);
 }
