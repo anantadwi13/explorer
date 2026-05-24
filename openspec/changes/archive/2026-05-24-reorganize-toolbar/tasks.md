@@ -63,4 +63,4 @@
 
 - [x] 8.1 Invoke the `record-demo-gif` skill to regenerate `docs/desktop.gif`, capturing the new two-row desktop toolbar (controls row above breadcrumb row) and an open Settings popover that shows Theme + Density + View.
 - [x] 8.2 Invoke the `record-demo-gif` skill to regenerate `docs/mobile.gif`, capturing the new mobile topbar (Settings replacing the theme toggle in the top-right slot) and an open Settings popover demonstrating the viewport-overflow fix at a narrow width.
-- [ ] 8.3 Commit both regenerated GIFs in the same commit (or PR) as the `web/src/` changes; do not split into a follow-up.
+- [x] 8.3 Commit both regenerated GIFs in the same commit (or PR) as the `web/src/` changes; do not split into a follow-up.
