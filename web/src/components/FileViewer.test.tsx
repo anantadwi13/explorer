@@ -21,17 +21,23 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   localStorage.clear()
 })
+const origClipboard = Object.getOwnPropertyDescriptor(Navigator.prototype, 'clipboard')
+const origExec = Object.getOwnPropertyDescriptor(Document.prototype, 'execCommand')
 afterEach(() => {
   vi.unstubAllGlobals()
+  if (origClipboard) Object.defineProperty(Navigator.prototype, 'clipboard', origClipboard)
+  else delete (navigator as unknown as { clipboard?: unknown }).clipboard
+  if (origExec) Object.defineProperty(Document.prototype, 'execCommand', origExec)
+  else delete (document as unknown as { execCommand?: unknown }).execCommand
 })
 
-function renderViewer(path: string) {
+function renderViewer(path: string, opts: { showToast?: (msg: string) => void } = {}) {
   const layoutValue = {
     search: '',
     setSearch: () => {},
     searchRef: createRef<HTMLInputElement>(),
     isFileRoute: true,
-    showToast: () => {},
+    showToast: opts.showToast ?? (() => {}),
     closeSidebar: () => {},
   }
   return render(
@@ -147,3 +153,84 @@ describe('FileViewer wrap toggle', () => {
     expect(btn.getAttribute('aria-label')).toBe('Wrap lines: off')
   })
 })
+
+describe('FileViewer copy-link', () => {
+  async function clickCopy(container: HTMLElement) {
+    const btn = await waitFor(() => {
+      const el = container.querySelector('button[aria-label="Copy link"]')
+      if (!el) throw new Error('copy-link button not rendered')
+      return el as HTMLButtonElement
+    })
+    await act(async () => {
+      btn.click()
+    })
+  }
+
+  it('uses navigator.clipboard in a secure context and toasts success', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 100, mtime: '', mime: 'image/png', kind: 'image' }))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('isSecureContext', true)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const toast = vi.fn()
+
+    const { container } = renderViewer('logo.png', { showToast: toast })
+    await clickCopy(container)
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(toast).toHaveBeenCalledWith('Link copied')
+  })
+
+  it('falls back to execCommand when navigator.clipboard is unavailable (insecure HTTP)', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 100, mtime: '', mime: 'image/png', kind: 'image' }))
+    vi.stubGlobal('isSecureContext', false)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    const exec = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
+    const toast = vi.fn()
+
+    const { container } = renderViewer('logo.png', { showToast: toast })
+    await clickCopy(container)
+
+    expect(exec).toHaveBeenCalledWith('copy')
+    expect(toast).toHaveBeenCalledWith('Link copied')
+  })
+
+  it('falls back to execCommand when navigator.clipboard.writeText rejects', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 100, mtime: '', mime: 'image/png', kind: 'image' }))
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    vi.stubGlobal('isSecureContext', true)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const exec = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
+    const toast = vi.fn()
+
+    const { container } = renderViewer('logo.png', { showToast: toast })
+    await clickCopy(container)
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(exec).toHaveBeenCalledWith('copy')
+    expect(toast).toHaveBeenCalledWith('Link copied')
+  })
+
+  it('toasts failure when both paths fail', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 100, mtime: '', mime: 'image/png', kind: 'image' }))
+    vi.stubGlobal('isSecureContext', false)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    const exec = vi.fn().mockReturnValue(false)
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: exec })
+    const toast = vi.fn()
+
+    const { container } = renderViewer('logo.png', { showToast: toast })
+    await clickCopy(container)
+
+    expect(exec).toHaveBeenCalledWith('copy')
+    expect(toast).toHaveBeenCalledWith('Failed to copy link')
+  })
+})
+

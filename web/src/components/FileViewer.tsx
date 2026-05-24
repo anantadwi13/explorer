@@ -17,6 +17,37 @@ interface Props {
   path: string
 }
 
+// navigator.clipboard requires a secure context (HTTPS or localhost). When the
+// explorer is reached from another device over plain HTTP it is undefined, so
+// fall back to a hidden textarea + execCommand('copy').
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // fall through to legacy path
+    }
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '0'
+    ta.style.left = '0'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
 export default function FileViewer({ path }: Props) {
   const [meta, setMeta] = useState<MetaResponse | null>(null)
   const [content, setContent] = useState<string | null>(null)
@@ -89,10 +120,9 @@ export default function FileViewer({ path }: Props) {
 
   const onCopyLink = async () => {
     const url = window.location.href
-    try {
-      await navigator.clipboard.writeText(url)
+    if (await copyText(url)) {
       showToast('Link copied')
-    } catch {
+    } else {
       showToast('Failed to copy link')
     }
   }
