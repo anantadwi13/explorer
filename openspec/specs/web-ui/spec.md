@@ -1,278 +1,10 @@
-# Capability: Directory Browser
+# Capability: Web UI
 
 ## Purpose
 
-A local HTTP server and single-page application (SPA) that allows users to browse, navigate, and preview the contents of a directory tree on their filesystem. The server exposes a JSON API for tree listing and file content, a raw streaming endpoint, and serves the SPA shell for all view URLs. The SPA renders folder listings, file previews (markdown, text, images), and graceful fallbacks for non-previewable files, with deep-linkable URLs and responsive layout across mobile and desktop viewports.
+Everything the React + Vite SPA does — URL routing (`/` and `/view/*` for folder vs file views), responsive layout (split tree+viewer at ≥800px, single-pane below), theme handling, design tokens, keyboard shortcuts, and the file-rendering pipelines for markdown, text (with syntax highlighting), images, and non-previewable fallbacks. The SPA is served as an embedded `embed.FS` bundle by the binary defined in `cli`, fetches data from `http-api`, and follows the URL conventions documented here. The `git-reader` capability layers additional `/git/*` surfaces on top of the same shell.
+
 ## Requirements
-### Requirement: CLI invocation and flags
-
-The `explorer` binary SHALL accept a single positional argument naming the directory to serve (the "served root") and SHALL accept optional flags `--port`, `--host`, and `--version` (alias `-v`). The default `--port` SHALL be `8080`. The default `--host` SHALL be `127.0.0.1`. Invocation without a directory argument or with a path that is not an existing readable directory SHALL fail with a non-zero exit code and a message on stderr, **except** when `--version` (or `-v`) is supplied — in that case the binary SHALL print the version line and exit 0 before validating the directory argument.
-
-The same invocation contract SHALL apply when the binary is executed via the Go toolchain using the module path `github.com/anantadwi13/explorer/cmd/explorer`, including `go run github.com/anantadwi13/explorer/cmd/explorer@latest <dir> [flags...]` and the binary produced by `go install github.com/anantadwi13/explorer/cmd/explorer@latest`.
-
-The binary SHALL print, as the first line of stdout on every successful startup (regardless of `--host` value), the exact playground banner line:
-
-```
-explorer (playground build — no auth, no audit; do not expose publicly)
-```
-
-When the existing non-loopback warning is emitted (because `--host` is not `127.0.0.1`, `::1`, or `localhost`), the playground banner SHALL appear strictly before the non-loopback warning. The non-loopback warning text and position relative to the served-root and URL lines SHALL NOT change.
-
-The `--help` (and any usage-error) output SHALL include, immediately after the `Usage:` line and before the flag defaults, the exact two-line footer (each line indented with two leading spaces):
-
-```
-  Playground tool — no auth, no security audit. Bind to loopback
-  unless you trust your network.
-```
-
-The `--version` (and `-v`) flag SHALL print exactly one line to stdout in the form `<version> (commit <commit>, built <buildDate>)` and SHALL exit with status 0. The values of `<version>`, `<commit>`, and `<buildDate>` are injected at link time by the release pipeline (see the `release-distribution` capability); locally-built binaries print the literal default `dev (commit unknown, built unknown)`. The `--version` flag SHALL NOT print the playground banner, the non-loopback warning, or any other line. When `--version` is combined with any other flag or positional argument, those other inputs SHALL be ignored and the version line SHALL be printed regardless.
-
-#### Scenario: Invoke with directory only
-
-- **WHEN** the user runs `explorer /some/dir` and `/some/dir` exists and is readable
-- **THEN** the binary binds to `127.0.0.1:8080`
-- **AND** the first line of stdout is exactly `explorer (playground build — no auth, no audit; do not expose publicly)`
-- **AND** subsequent stdout contains the served root path and `http://127.0.0.1:8080`
-- **AND** does not print a non-loopback warning
-
-#### Scenario: Override port
-
-- **WHEN** the user runs `explorer /some/dir --port 9000`
-- **THEN** the binary binds to `127.0.0.1:9000`
-- **AND** the first line of stdout is the playground banner
-- **AND** the startup banner reflects port `9000`
-
-#### Scenario: Override host to non-loopback
-
-- **WHEN** the user runs `explorer /some/dir --host 0.0.0.0`
-- **THEN** the binary binds to `0.0.0.0:8080`
-- **AND** the first line of stdout is the playground banner
-- **AND** the startup banner prints the URL `http://0.0.0.0:8080`
-- **AND** the startup banner prints a warning that the host is not loopback and the served files are readable on the network
-- **AND** the playground banner appears strictly before the non-loopback warning
-
-#### Scenario: Missing directory argument
-
-- **WHEN** the user runs `explorer` with no positional argument and no `--version` flag
-- **THEN** the binary exits non-zero
-- **AND** prints a usage message on stderr
-- **AND** the usage message contains the playground footer text `Playground tool — no auth, no security audit. Bind to loopback unless you trust your network.`
-
-#### Scenario: Path argument is not a directory
-
-- **WHEN** the user runs `explorer /path/that/does/not/exist` or passes a regular file
-- **THEN** the binary exits non-zero
-- **AND** prints an error on stderr identifying that the path is missing or not a directory
-
-#### Scenario: Help flag prints playground footer
-
-- **WHEN** the user runs `explorer --help`
-- **THEN** the usage output contains the `Usage: explorer <dir> [--port PORT] [--host HOST]` line
-- **AND** the line immediately after begins with `  Playground tool — no auth, no security audit.`
-- **AND** the flag defaults are printed below the footer
-- **AND** the listed flags include `--version` (alias `-v`)
-
-#### Scenario: Version flag with no other arguments
-
-- **WHEN** the user runs `explorer --version`
-- **THEN** stdout contains exactly one line in the form `<version> (commit <commit>, built <buildDate>)`
-- **AND** stdout does NOT contain the playground banner
-- **AND** the process exits 0
-- **AND** no HTTP server is started
-
-#### Scenario: Version short flag alias
-
-- **WHEN** the user runs `explorer -v`
-- **THEN** the output is identical to `explorer --version`
-- **AND** the process exits 0
-
-#### Scenario: Version flag combined with directory and other flags
-
-- **WHEN** the user runs `explorer /some/dir --port 9000 --version`
-- **THEN** stdout contains exactly the version line
-- **AND** the process exits 0
-- **AND** no HTTP server is started on port 9000 or any other port
-
-#### Scenario: Version flag on a locally-built binary
-
-- **WHEN** a binary built via `make build` or `go install github.com/anantadwi13/explorer/cmd/explorer@latest` (without release-pipeline ldflags) is invoked with `--version`
-- **THEN** stdout contains exactly one line: `dev (commit unknown, built unknown)`
-- **AND** the process exits 0
-
-#### Scenario: Invoke via `go run` from the module path
-
-- **WHEN** the user has a Go 1.24+ toolchain and runs `go run github.com/anantadwi13/explorer/cmd/explorer@latest /some/dir`
-- **THEN** the Go toolchain fetches the module, compiles the binary, and executes it with `/some/dir` as the served root
-- **AND** the running server behaves identically to the `./explorer /some/dir` invocation, including binding defaults, the playground banner as the first line of stdout, the startup banner, and SPA assets served at `/`
-
-#### Scenario: Install via `go install` from the module path
-
-- **WHEN** the user has a Go 1.24+ toolchain and runs `go install github.com/anantadwi13/explorer/cmd/explorer@latest`
-- **THEN** the Go toolchain produces an `explorer` binary in `$GOBIN` (or `$GOPATH/bin`)
-- **AND** running that binary against any readable directory serves the SPA and JSON API exactly as the `make build` output would, and prints the playground banner as the first line of stdout
-
-### Requirement: Graceful shutdown on signals
-
-The server SHALL terminate gracefully on SIGINT or SIGTERM by ceasing to accept new connections and draining in-flight HTTP requests within a bounded shutdown timeout, after which it SHALL exit with status 0.
-
-#### Scenario: SIGINT during idle
-
-- **WHEN** the server is running with no in-flight requests
-- **AND** the process receives SIGINT
-- **THEN** the server stops accepting new connections
-- **AND** exits with status 0
-
-#### Scenario: SIGTERM during in-flight request
-
-- **WHEN** an HTTP request is being handled
-- **AND** the process receives SIGTERM
-- **THEN** new connections are rejected
-- **AND** the in-flight request is allowed to complete (within the shutdown timeout)
-- **AND** the process exits with status 0
-
-### Requirement: Lazy folder listing API
-
-The server SHALL expose `GET /api/tree?path=<relative-path>` returning a JSON object describing the immediate children of the requested folder under the served root, with each entry typed as either `dir` or `file`. The response SHALL include the entry name and, for files, the size in bytes, the modification time, the detected MIME type, and a previewability classification (`kind`) computed from the MIME using the same rule the file metadata API applies. The `kind` field SHALL be one of `markdown`, `text`, `image`, or omitted/empty for files whose MIME does not classify as previewable. The response SHALL NOT include grandchildren — clients call `/api/tree` again for each folder they expand or navigate into.
-
-#### Scenario: List the served root
-
-- **WHEN** the SPA requests `GET /api/tree?path=` (or `path=/`) on a server whose served root contains files and folders
-- **THEN** the response is HTTP 200 with a JSON body listing only the direct children of the served root
-- **AND** each entry has a `type` of `dir` or `file`
-- **AND** file entries include `size`, `mtime`, and `mime`
-- **AND** file entries whose MIME classifies as previewable include a `kind` of `markdown`, `text`, or `image`
-- **AND** dir entries do NOT include children
-
-#### Scenario: List a subfolder
-
-- **WHEN** the SPA requests `GET /api/tree?path=docs`
-- **AND** `docs` is a folder under the served root
-- **THEN** the response lists only the direct children of `docs`
-
-#### Scenario: Hidden files are shown
-
-- **WHEN** the requested folder contains entries beginning with `.` (e.g. `.gitignore`, `.env`)
-- **THEN** those entries appear in the listing alongside non-hidden entries
-
-#### Scenario: Sort order
-
-- **WHEN** the listing is returned
-- **THEN** directory entries appear before file entries
-- **AND** within each group entries are sorted case-insensitively by name
-
-#### Scenario: Symlink resolving inside the root is included
-
-- **WHEN** the folder contains a symlink whose target resolves to a path still under the served root
-- **THEN** the entry appears in the listing with the type of its resolved target (`dir` or `file`)
-
-#### Scenario: Symlink resolving outside the root is omitted
-
-- **WHEN** the folder contains a symlink whose target resolves outside the served root
-- **THEN** the entry is omitted from the listing
-
-#### Scenario: Kind on a non-previewable file
-
-- **WHEN** the folder contains a file whose MIME does not classify as `markdown`, `text`, or `image` (e.g. a `.zip` archive, a `.pdf`, an unknown binary)
-- **THEN** the entry appears in the listing with no `kind` field, or with `kind` set to an empty string
-
-### Requirement: File metadata API
-
-The server SHALL expose `GET /api/meta?path=<relative-path>` returning a JSON object describing a single file's metadata: `size` (bytes), `mtime` (RFC 3339), `mime` (detected MIME type), and `kind` (previewability classification: `markdown`, `text`, `image`, or empty for non-previewable). The endpoint SHALL NOT return file content under any circumstance. Requests against a directory SHALL return a typed `not_regular` error. Requests against a path that escapes the served root SHALL return a typed `outside_root` error.
-
-#### Scenario: Markdown file metadata
-
-- **WHEN** the SPA requests `GET /api/meta?path=README.md`
-- **THEN** the response is HTTP 200 with a JSON body containing `size`, `mtime`, `mime`, and `kind: "markdown"`
-- **AND** the response body does NOT contain a content field
-
-#### Scenario: Text or code file metadata
-
-- **WHEN** the SPA requests `GET /api/meta?path=src/main.go`
-- **THEN** the response is HTTP 200 with `kind: "text"` and `mime` set to a `text/*` value
-- **AND** the response body does NOT contain a content field
-
-#### Scenario: Image file metadata
-
-- **WHEN** the SPA requests `GET /api/meta?path=images/logo.png`
-- **THEN** the response is HTTP 200 with `kind: "image"` and `mime` set to the detected image MIME
-- **AND** the response body does NOT contain a content field
-
-#### Scenario: Non-previewable file metadata
-
-- **WHEN** the SPA requests `GET /api/meta?path=archive.zip`
-- **THEN** the response is HTTP 200 with `size`, `mtime`, `mime` set to the detected MIME
-- **AND** the `kind` field is empty or omitted
-
-#### Scenario: Path is a directory
-
-- **WHEN** the SPA requests `GET /api/meta?path=docs`
-- **AND** `docs` is a directory under the served root
-- **THEN** the response is a typed `not_regular` error (HTTP 400)
-
-#### Scenario: Path does not exist
-
-- **WHEN** the SPA requests `GET /api/meta?path=missing.md` and the file does not exist
-- **THEN** the response is a typed `not_found` error (HTTP 404)
-
-### Requirement: Server-side MIME classification covers popular language extensions
-
-The server's MIME detection SHALL classify the following file extensions as text-previewable, returning a `text/...` media type in `/api/meta` and `/api/tree` responses and a `kind` of `text` (or `markdown` for `.md`/`.markdown`) in the previewability classifier:
-
-- Programming: `.cs`, `.kt`, `.kts`, `.swift`, `.scala`, `.sc`, `.groovy`, `.gradle`, `.m`, `.mm`, `.fs`, `.fsi`, `.fsx`, `.php`, `.phtml`, `.dart`, `.lua`, `.pl`, `.pm`, `.ps1`, `.psm1`, `.r`, `.R`, `.hs`, `.lhs`, `.ex`, `.exs`, `.erl`, `.hrl`, `.clj`, `.cljs`, `.cljc`, `.edn`, `.jl`, `.zig`.
-- Data / config / query: `.json`, `.graphql`, `.gql`, `.proto`.
-
-The existing previously-registered text extensions (`.go`, `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.rb`, `.rs`, `.sh`, `.html`, `.htm`, `.css`, `.scss`, `.sql`, `.c`, `.cpp`, `.h`, `.java`, `.xml`, `.csv`, `.yaml`, `.yml`, `.toml`, `.md`, `.markdown`, `.txt`) SHALL retain their current classification.
-
-Detection SHALL remain extension-first: if a file's extension matches the registry, the registry's media type wins. Filename-based detection (e.g. for `Dockerfile`, `Makefile`) is NOT in scope of this requirement.
-
-#### Scenario: Kotlin file is text-previewable
-
-- **WHEN** a request arrives at `GET /api/meta?path=app/MainActivity.kt`
-- **AND** the file exists under the served root
-- **THEN** the response is HTTP 200 with `mime` matching `text/x-kotlin*` (or another `text/...` value)
-- **AND** `kind` is `"text"`
-
-#### Scenario: JSON file is text-previewable
-
-- **WHEN** a request arrives at `GET /api/meta?path=package.json`
-- **THEN** the response has `kind: "text"` and a `mime` value with a `text/` prefix
-- **AND** the file viewer can render it inline (subject to the existing 5 MiB cap)
-
-#### Scenario: Listing exposes kind for new languages
-
-- **WHEN** a request arrives at `GET /api/tree?path=src` and the folder contains a `.kt`, `.swift`, `.json`, and `.proto` file
-- **THEN** each file entry in the response has `kind: "text"`
-
-#### Scenario: New extensions classified extension-first
-
-- **WHEN** a file `weird.kt` contains content that `http.DetectContentType` would classify as `application/octet-stream`
-- **THEN** the server's MIME detection still returns `text/x-kotlin` (or equivalent `text/...`) because the extension match wins
-- **AND** `kind` is `"text"`
-
-### Requirement: Raw file streaming endpoint
-
-The server SHALL expose `GET /raw/<path>` which streams the file's bytes with a `Content-Type` header set from MIME detection. The endpoint SHALL NOT set `Content-Disposition: attachment`. The endpoint SHALL NOT inspect query parameters or headers to alter its behaviour. The endpoint SHALL apply the same path-traversal and symlink-containment rules as `/api/*` and `/view/*`.
-
-#### Scenario: Image bytes for inline display
-
-- **WHEN** an `<img src="/raw/images/logo.png">` element is rendered by the SPA
-- **AND** the file exists under the served root
-- **THEN** the response is HTTP 200 with `Content-Type: image/png` (or the correct image mime)
-- **AND** the body is the raw PNG bytes
-- **AND** no `Content-Disposition` header is set
-
-#### Scenario: Bytes for a download link
-
-- **WHEN** the user clicks `<a href="/raw/archive.zip" download="archive.zip">Download</a>`
-- **THEN** the same endpoint responds with HTTP 200 and the file bytes
-- **AND** the response sets `Content-Type` for the file
-- **AND** the browser saves the file to disk because of the `download` attribute on the link
-
-#### Scenario: Direct address-bar access
-
-- **WHEN** a user opens `/raw/<path>` directly in the browser address bar
-- **THEN** the response is the bare bytes
-- **AND** the browser handles them according to its own MIME defaults (display, save, etc.)
 
 ### Requirement: SPA folder URL renders folder listing
 
@@ -584,54 +316,6 @@ When the SPA fetches `/raw/<path>` for a markdown or text-like file and the byte
 - **AND** the message indicates the file is binary or not valid text
 - **AND** the Download button links to `/raw/corrupt.txt`
 
-### Requirement: Path-traversal containment
-
-Every endpoint that accepts a path (`/view`, `/raw`, `/api/tree`, `/api/meta`) SHALL reject any request whose resolved absolute path is not contained within the served root's absolute path. Symlinks SHALL be followed only as long as the resolved target remains within the served root.
-
-#### Scenario: Dot-dot escape attempt
-
-- **WHEN** a request arrives at `/api/meta?path=../../../etc/passwd` or `/raw/../../../etc/passwd`
-- **THEN** the response is a typed `outside_root` error (HTTP 400)
-- **AND** no file outside the served root is opened or read
-
-#### Scenario: Symlink to outside root
-
-- **WHEN** a file `link.txt` under the served root is a symlink whose target resolves outside the root
-- **AND** a request arrives for `/api/meta?path=link.txt` or `/raw/link.txt`
-- **THEN** the response is a typed `outside_root` error
-- **AND** the file is not read
-
-#### Scenario: Symlink within root
-
-- **WHEN** a file `shortcut.md` under the served root is a symlink to another file also under the served root
-- **AND** a request arrives for `/api/meta?path=shortcut.md`
-- **THEN** the response is metadata for the target file (size, mtime, mime, kind)
-
-### Requirement: Error responses
-
-API endpoints SHALL return typed errors for predictable failure modes so the SPA can render specific messages. Recognised error types: `not_found`, `permission_denied`, `outside_root`, `not_regular`, `too_large`, `not_utf8`. Unknown failures SHALL surface as a generic `internal_error`.
-
-#### Scenario: Path does not exist
-
-- **WHEN** a request arrives for a path that does not exist under the served root
-- **THEN** the response is a typed `not_found` error (HTTP 404)
-
-#### Scenario: Path exists but is not readable
-
-- **WHEN** a request arrives for a path the server process lacks read permission for
-- **THEN** the response is a typed `permission_denied` error (HTTP 403)
-
-#### Scenario: Path resolves to neither file nor directory
-
-- **WHEN** a request resolves to a special file (socket, device, fifo)
-- **THEN** the response is a typed `not_regular` error (HTTP 400)
-
-#### Scenario: SPA surfaces typed errors
-
-- **WHEN** the SPA receives any of the typed errors above
-- **THEN** the viewer renders a specific message corresponding to the error type
-- **AND** does NOT show a generic placeholder
-
 ### Requirement: SPA layout adapts to viewport
 
 The SPA SHALL render a single-view layout below 800 CSS pixels of viewport width and a split tree-and-viewer layout at and above 800 CSS pixels. The application root SHALL occupy the full viewport (`100vh`) and SHALL NOT page-scroll; scrolling SHALL occur inside the sidebar tree and the main content region independently. Touch targets SHALL be at least 44×44 CSS pixels. The SPA SHALL NOT rely on hover-only affordances for any interaction reachable on mobile.
@@ -739,17 +423,76 @@ The default density SHALL be `regular`. Density SHALL drive the row height and c
 - **WHEN** the SPA loads with a non-default persisted theme or density
 - **THEN** the initial paint already uses the persisted theme and density (no visible flash from default to chosen)
 
+### Requirement: SPA design tokens
+
+The SPA SHALL paint all chrome (toolbar, breadcrumbs, sidebar, folder listing, settings popover, file viewer chrome, badges, cards, dialogs, focus rings, and any future surface) using a documented set of CSS custom properties whose canonical declarations live in `web/src/index.css`. The vocabulary SHALL be:
+
+| Token | Role |
+|---|---|
+| `--bg` | Page background |
+| `--bg-soft` | Subtle recessed surface (e.g. inset code blocks, hunk bodies) |
+| `--bg-panel` | Elevated surface (popovers, cards, dialogs) |
+| `--fg` | Default foreground text |
+| `--fg-muted` | Secondary text (meta, captions, hover borders) |
+| `--fg-faint` | Tertiary text (placeholders, disabled) |
+| `--line` | Default border / divider colour |
+| `--line-soft` | Subtle divider |
+| `--hover` | Hover/active background tint |
+| `--active` | Pressed / selected background tint |
+| `--accent` | Brand accent colour |
+| `--accent-fg` | Foreground used on top of `--accent` |
+| `--shadow` | Standard elevation shadow |
+| `--radius` | Default corner radius |
+| `--radius-lg` | Larger corner radius (cards, dialogs) |
+| `--row-h` | List/row height (driven by density) |
+| `--content-pad` | Content padding (driven by density) |
+| `--font-sans` | Default sans-serif font stack |
+| `--font-mono` | Default monospace font stack |
+
+Every token in this vocabulary whose value differs between light and dark themes (the colour tokens above the `--shadow` row in the table) SHALL be redeclared under both `[data-theme="light"]` and `[data-theme="dark"]` in `web/src/index.css` with values appropriate to the theme, so the active theme drives the rendered colour without a flash on load (see "Theme handling" requirement). Theme-invariant tokens (geometry: `--radius`, `--radius-lg`, `--row-h`, `--content-pad`; typography: `--font-sans`, `--font-mono`; brand colour: `--accent`, `--accent-fg`) MAY be declared once at `:root` and are not required to be redeclared per theme.
+
+Component CSS SHALL reference these tokens via `var(--token-name)` (without a hardcoded fallback that masks an undeclared token name). Component CSS SHALL NOT introduce parallel ad-hoc token names for the same role via `var(--newname, <hardcoded-fallback>)`; such patterns silently fall back to the hardcoded value when the name is undeclared, which has historically rendered as invisible text in one of the two themes.
+
+If a genuinely new design role appears that the existing vocabulary cannot express, the new token SHALL be added to the central declaration in `web/src/index.css` with both light and dark variants, and SHALL be added to the vocabulary table above in the same change.
+
+Other themed properties used by the SPA — syntax-highlighting token colours (`--code-*` in `web/src/styles/syntax.css`) and diff-line tints (`--color-diff-*` in `web/src/styles/syntax.css`) — are governed by their own existing requirements ("Syntax highlighting", `git-reader` "Diff rendering rules") and are not enumerated above. They follow the same `[data-theme]` pattern.
+
+#### Scenario: Chrome surface uses the documented vocabulary
+
+- **WHEN** a contributor adds a new SPA component that paints any chrome (background, border, foreground, padding, radius, font family)
+- **THEN** the component's CSS uses one of the tokens listed in the vocabulary above
+- **AND** the CSS does NOT introduce a new token name via inline `var(--newname, <fallback>)`
+
+#### Scenario: Theme switch updates every chrome surface
+
+- **WHEN** the user switches the theme from light to dark via the settings menu
+- **THEN** every chrome surface in the SPA — including toolbar, sidebar, popovers, badges, and cards — re-renders with the dark-theme values of the vocabulary tokens
+- **AND** no chrome surface retains light-theme colours due to a hardcoded value
+
+#### Scenario: A new design role requires a new token
+
+- **WHEN** a new chrome role appears that no existing token expresses (e.g. an overlay scrim colour)
+- **THEN** the new token is added to `web/src/index.css` under `:root`, `[data-theme="light"]`, and `[data-theme="dark"]`
+- **AND** the new token is added to the vocabulary table in this requirement in the same change
+
+#### Scenario: Undocumented tokens are rejected by review
+
+- **WHEN** a pull request introduces `var(--bg-1, #1a1a1a)` or similar undeclared-token reference with a hardcoded fallback
+- **THEN** code review rejects the pattern and asks the contributor to use the documented vocabulary (or add the new token to the central declaration)
+
 ### Requirement: Keyboard shortcuts for navigation and search
 
 The SPA SHALL provide keyboard shortcuts to focus the toolbar search, dismiss the search or return from a file viewer to its folder, and navigate to the parent folder. Shortcuts SHALL NOT activate while the user is typing in an input, textarea, or content-editable element.
 
-- Pressing `/` from a folder view SHALL move keyboard focus to the toolbar search input.
-- Pressing `Escape` SHALL clear the search input if it has a value; otherwise, if the user is viewing a file, it SHALL navigate to the file's parent folder.
-- Pressing `Backspace` (when no field is focused and the SPA is not viewing a file) SHALL navigate to the parent folder of the current path. The SPA SHALL prevent the browser default of navigating back in history when this shortcut applies.
+These shortcuts apply on web-ui routes only — `/` and `/view/*` (folder and file URLs). On `/git/*` routes, the keyboard shortcuts defined by the git-reader capability apply instead and the rules below SHALL NOT fire. The "inert when typing in an input/textarea/content-editable" rule is shared across both capabilities.
+
+- Pressing `/` on a web-ui route SHALL move keyboard focus to the toolbar search input.
+- Pressing `Escape` on a web-ui route SHALL clear the search input if it has a value; otherwise, if the user is viewing a file, it SHALL navigate to the file's parent folder.
+- Pressing `Backspace` on a web-ui route (when no field is focused and the SPA is not viewing a file) SHALL navigate to the parent folder of the current path. The SPA SHALL prevent the browser default of navigating back in history when this shortcut applies.
 
 #### Scenario: Slash focuses search
 
-- **WHEN** the user is on a folder view with no input focused
+- **WHEN** the user is on a folder view (`/` or `/view/<path>/`) with no input focused
 - **AND** presses `/`
 - **THEN** the toolbar search input gains keyboard focus
 - **AND** the browser does not insert a `/` character anywhere
@@ -763,29 +506,37 @@ The SPA SHALL provide keyboard shortcuts to focus the toolbar search, dismiss th
 
 #### Scenario: Escape clears search
 
-- **WHEN** the toolbar search input contains text
+- **WHEN** the user is on a web-ui route
+- **AND** the toolbar search input contains text
 - **AND** the user presses `Escape`
 - **THEN** the search input becomes empty
 - **AND** the listing returns to its unfiltered state
 
 #### Scenario: Escape returns from file to folder
 
-- **WHEN** the SPA is on a file URL with no search active
+- **WHEN** the SPA is on a file URL (`/view/<path>`) with no search active
 - **AND** the user presses `Escape`
 - **THEN** the SPA navigates to the file's parent folder
 
 #### Scenario: Backspace navigates up from a folder
 
-- **WHEN** the SPA is on a non-root folder URL with no field focused
+- **WHEN** the SPA is on a non-root folder URL (`/view/<path>/`) with no field focused
 - **AND** the user presses `Backspace`
 - **THEN** the SPA navigates to the parent folder
 - **AND** the browser does not navigate back in history
 
 #### Scenario: Backspace inert at root
 
-- **WHEN** the SPA is on the root folder URL with no field focused
+- **WHEN** the SPA is on the root folder URL (`/`) with no field focused
 - **AND** the user presses `Backspace`
 - **THEN** the SPA does not change route
+
+#### Scenario: Directory-browser shortcuts do not fire on git routes
+
+- **WHEN** the SPA is on any `/git/*` route with no field focused
+- **AND** the user presses `/`, `Escape`, or `Backspace`
+- **THEN** the web-ui shortcut handlers above do NOT fire
+- **AND** the git-reader capability's keyboard rules govern the behaviour instead
 
 ### Requirement: Deep-linkable folder and file URLs
 
@@ -802,28 +553,6 @@ Every folder and every file under the served root SHALL be addressable by a stab
 - **WHEN** the user bookmarks `http://127.0.0.1:8080/view/docs/`
 - **AND** later opens the bookmark
 - **THEN** the SPA renders the folder listing for `docs`
-
-### Requirement: Embedded SPA assets ship in the published module
-
-The compiled Single-Page Application assets that the Go binary serves SHALL be present in the published source tree at `internal/server/ui/dist/`, so that any consumer obtaining the module via the Go module proxy (`go install`, `go run`, or `go get` followed by a local build) produces a binary whose `embed.FS` contains a fully functional SPA without requiring Node.js, npm, or a separate frontend build step on the consumer's machine.
-
-#### Scenario: Fresh clone produces a runnable binary without npm
-
-- **WHEN** a contributor clones the repository on a machine with only the Go toolchain installed
-- **AND** runs `go build ./cmd/explorer`
-- **THEN** the produced binary serves the SPA at `/` and renders folder listings, markdown previews, and image previews against any readable directory
-- **AND** no `npm` or `node` invocation is required to obtain a working binary
-
-#### Scenario: Module-proxy install produces a runnable binary
-
-- **WHEN** a user with no clone of the repository runs `go install github.com/anantadwi13/explorer/cmd/explorer@latest`
-- **THEN** the resulting binary serves a non-empty SPA shell at `/` (HTTP 200 with a non-trivial HTML body that loads the bundled JS/CSS)
-- **AND** the binary does NOT serve the empty-embed fallback (an HTTP 404 with `Content-Type: text/plain` and body `404 page not found`, returned by the stock `http.ServeFileFS` handler in `internal/server/static.go` when `dist/index.html` is missing)
-
-#### Scenario: SPA source change without dist regeneration is detectable
-
-- **WHEN** a contributor modifies files under `web/src/` and commits without regenerating `internal/server/ui/dist/`
-- **THEN** the project provides a documented mechanism (a Make target, pre-commit hook guidance, or CI check) by which the staleness of `internal/server/ui/dist/` relative to `web/src/` can be detected before merge
 
 ### Requirement: File reader wrap toggle
 
@@ -872,4 +601,3 @@ When wrap is **off**, the standalone code block SHALL render with `white-space: 
 - **WHEN** the user toggles wrap off and then opens a markdown file containing fenced code blocks
 - **THEN** the markdown's fenced code blocks render with their existing wrapping behavior
 - **AND** the wrap toggle is not displayed in the header for the markdown view
-

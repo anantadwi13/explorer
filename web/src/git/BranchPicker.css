@@ -1,0 +1,97 @@
+.branch-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.branch-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  min-height: 32px;
+  max-width: 220px;
+  overflow: hidden;
+}
+
+.branch-picker-trigger:hover {
+  border-color: var(--fg-muted);
+}
+
+.branch-picker-icon {
+  font-size: 0.95rem;
+  color: var(--fg-muted);
+}
+
+.branch-picker-label {
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 14ch;
+}
+
+.branch-picker-chevron {
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+.branch-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.25rem;
+}
+
+.branch-picker-section {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-muted);
+  padding: 0.5rem 0.5rem 0.25rem;
+}
+
+.branch-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg);
+  border-radius: 4px;
+  min-height: 32px;
+}
+
+.branch-picker-item:hover,
+.branch-picker-item:focus-visible {
+  background: var(--hover);
+}
+
+.branch-picker-item.is-active {
+  color: var(--color-diff-add-fg);
+}
+
+.branch-picker-empty {
+  padding: 0.5rem;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}

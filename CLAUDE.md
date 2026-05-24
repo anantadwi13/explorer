@@ -39,14 +39,14 @@ The React SPA builds to `internal/server/ui/dist/` (configured in `web/vite.conf
 
 ### Path-traversal containment is the security boundary
 
-**Every** path-accepting endpoint (`/api/tree`, `/api/file`, `/raw/*`) flows through `internal/server/resolver.Resolver.Resolve`. The served root is resolved once at startup (`filepath.EvalSymlinks` + `filepath.Abs` in `cmd/explorer/main.go`). Per-request, `Resolve` cleans the input, rejects `..`/absolute paths, joins to root, `EvalSymlinks` the result, and verifies prefix-containment under the root before any file open. Symlinks pointing outside the root return `ErrOutsideRoot` (HTTP 400) and are silently dropped from `/api/tree` listings — see `TestTreeOutsideRootSymlinkDropped`. Don't add a new endpoint that touches the filesystem without going through the resolver.
+**Every** path-accepting endpoint (`/api/tree`, `/api/meta`, `/raw/*`) flows through `internal/server/resolver.Resolver.Resolve`. The served root is resolved once at startup (`filepath.EvalSymlinks` + `filepath.Abs` in `cmd/explorer/main.go`). Per-request, `Resolve` cleans the input, rejects `..`/absolute paths, joins to root, `EvalSymlinks` the result, and verifies prefix-containment under the root before any file open. Symlinks pointing outside the root return `ErrOutsideRoot` (HTTP 400) and are silently dropped from `/api/tree` listings — see `TestTreeOutsideRootSymlinkDropped`. Don't add a new endpoint that touches the filesystem without going through the resolver.
 
 Errors are typed (`not_found`, `permission_denied`, `outside_root`, `not_regular`, `too_large`, `not_utf8`, `internal_error`) and serialized via `internal/server/errors.go` as `{error, message}` JSON with mapped HTTP status codes. The TS `ApiError` union in `web/src/api/types.ts` mirrors this exactly — keep both sides in sync.
 
 ### Three endpoint shapes, three roles
 
 - `GET /api/tree?path=<rel>` — JSON listing of a single folder level. Lazy: no recursion. Sort is dirs-first, then case-insensitive name. Hidden files (`.foo`) are included.
-- `GET /api/file?path=<rel>` — JSON metadata + inline content for previewable files. Cap is `inlineSizeCap = 5 * 1024 * 1024` (named constant in `internal/server/api.go`). Markdown/text are inlined as UTF-8 strings; images return metadata only (the SPA loads bytes via `/raw/`); everything else gets `not_regular`.
+- `GET /api/meta?path=<rel>` — JSON metadata only (`size`, `mtime`, `mime`, `kind`) for previewable files; never returns content. Cap is `inlineSizeCap = 5 * 1024 * 1024` (named constant in `internal/server/api.go`); enforcement is client-side. The SPA loads markdown/text/image bytes via `/raw/`. Directories return `not_regular`.
 - `GET /raw/<path>` — streams bytes with `Content-Type` from MIME detection; **never** sets `Content-Disposition` (the SPA's `<a download>` handles save-vs-display).
 
 The SPA's `/view/<path>/` (folder, trailing slash) vs `/view/<path>` (file, no slash) convention is reconciled in `web/src/pages/ViewPage.tsx`: it calls `/api/tree` first; if the server says `not_regular`, falls back to `FileViewer`.
@@ -71,11 +71,18 @@ The SPA's `/view/<path>/` (folder, trailing slash) vs `/view/<path>` (file, no s
 
 ### Spec source of truth
 
-The `openspec/` directory holds spec-driven-development artifacts. Behavior contracts live in `openspec/specs/directory-browser/spec.md` (CLI flags, API shapes, path-traversal rules, SPA URL conventions, render rules). Treat that file as the canonical contract when changing server or SPA behavior; the corresponding `opsx:*` skills are wired up in `.claude/commands/opsx/`.
+The `openspec/` directory holds spec-driven-development artifacts. Behavior contracts are split across four capabilities — treat each file as the canonical contract for its area when changing server or SPA behavior:
+
+- `openspec/specs/cli/spec.md` — CLI flag parsing, playground banner, non-loopback warning, `--version`/`-v`, graceful shutdown, embedded SPA assets contract.
+- `openspec/specs/http-api/spec.md` — `/api/tree`, `/api/meta`, `/raw/*`, server-side MIME classification, `{error, message}` error envelope.
+- `openspec/specs/path-resolver/spec.md` — path-traversal containment, symlink rules, the security boundary. Referenced by both `http-api` and `git-reader`.
+- `openspec/specs/web-ui/spec.md` — SPA URL routing (`/view/*`), layout, theme, design tokens, keyboard shortcuts, markdown/text/image/fallback rendering, wrap toggle.
+
+The `git-reader` and `release-distribution` capabilities (`openspec/specs/git-reader/spec.md`, `openspec/specs/release-distribution/spec.md`) cover the optional git surfaces and the CI release pipeline respectively. The corresponding `opsx:*` skills are wired up in `.claude/commands/opsx/`.
 
 ## Conventions
 
-- Go module path: `github.com/anantadwi13/explorer`. Go 1.24+. No external Go dependencies — stdlib only.
+- Go module path: `github.com/anantadwi13/explorer`. Go 1.24+. Stdlib only, with one documented exception: `github.com/go-git/go-git/v5` (used by the `internal/server/git` package to back the `git-reader` capability). Do not add new dependencies for anything else.
 - The Go binary is committed at the repo root after a build (`./explorer`); `make clean` removes it.
 - Tests live next to code (`*_test.go`); the resolver and mime packages have focused unit tests, server has black-box `_test` tests via `httptest`.
 - `testdata/` is the fixture directory used by `make dev-server` / `make run` — feel free to drop sample files there for manual testing.

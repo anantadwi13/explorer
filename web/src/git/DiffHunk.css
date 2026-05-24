@@ -1,0 +1,92 @@
+/* DiffHunk renders the unified diff for one hunk. Background tints come from
+   `--color-diff-add-bg` / `--color-diff-del-bg` — defined in styles/syntax.css
+   for both light and dark themes so the markers stay readable. */
+
+.diff-hunk {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-soft);
+}
+
+.diff-hunk + .diff-hunk {
+  margin-top: 0.75rem;
+}
+
+.diff-hunk-header {
+  background: var(--hover);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 0.3rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.diff-hunk-body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background: transparent;
+}
+
+/* wrap-on (default): long lines wrap inside the hunk; the page does not
+   scroll horizontally. wrap-off: lines stay on a single visual row and the
+   hunk body itself scrolls horizontally. Controlled by the page-level wrap
+   toggle shared with the file viewer via localStorage. */
+.diff-hunk-body.wrap-on {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-hunk-body.wrap-off {
+  white-space: pre;
+  word-break: normal;
+  overflow-x: auto;
+}
+
+/* Inner wrapper: in wrap-off, sizes to the widest line so background tints
+   extend across the full scrollable width. In wrap-on, behaves as a normal
+   block (lines wrap inside their own width = parent width). */
+.diff-hunk-lines {
+  display: block;
+}
+
+.diff-hunk-body.wrap-off .diff-hunk-lines {
+  width: max-content;
+  min-width: 100%;
+}
+
+.diff-line {
+  display: block;
+  padding-left: 0.5rem;
+}
+
+.diff-line-marker {
+  display: inline-block;
+  width: 1.25ch;
+  text-align: center;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.diff-line-add {
+  background: var(--color-diff-add-bg);
+}
+
+.diff-line-add .diff-line-marker {
+  color: var(--color-diff-add-fg);
+}
+
+.diff-line-del {
+  background: var(--color-diff-del-bg);
+}
+
+.diff-line-del .diff-line-marker {
+  color: var(--color-diff-del-fg);
+}
+
+.diff-line-context {
+  color: var(--fg);
+}

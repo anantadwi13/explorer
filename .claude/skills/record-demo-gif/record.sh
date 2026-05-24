@@ -68,6 +68,13 @@ if [ ! -x "$REPO_ROOT/explorer" ]; then
   make build
 fi
 
+# Regenerate the sample git repo. The recording serves this directory so the
+# git surface (branch picker, commits, diffs) is active — the gate is strict
+# on a `.git` entry at the served root.
+echo "regenerating testdata/sample-repo..."
+"$REPO_ROOT/scripts/sample-repo.sh" >/dev/null
+SERVE_DIR="$REPO_ROOT/testdata/sample-repo"
+
 # --- start servers ---------------------------------------------------------
 
 EXP_LOG="$(mktemp -t explorer-rec.XXXXXX.log)"
@@ -84,8 +91,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "starting explorer on :$PORT..."
-"$REPO_ROOT/explorer" "$REPO_ROOT/testdata" --port "$PORT" >"$EXP_LOG" 2>&1 &
+echo "starting explorer on :$PORT serving $SERVE_DIR..."
+"$REPO_ROOT/explorer" "$SERVE_DIR" --port "$PORT" >"$EXP_LOG" 2>&1 &
 EXP_PID=$!
 sleep 1
 curl -sf -o /dev/null "http://127.0.0.1:$PORT/" || {

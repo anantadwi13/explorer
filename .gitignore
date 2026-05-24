@@ -26,3 +26,13 @@ Thumbs.db
 # Anchored at the repo root so the SPA build output at
 # `internal/server/ui/dist/` (which IS committed; see note above) is not ignored.
 /dist/
+
+# Generated fixture repo for git-reader tests (created by `make sample-repo`).
+# Nested .git/ is intentionally never committed.
+/testdata/sample-repo/
+
+# Playwright e2e test artifacts
+/e2e/node_modules/
+/e2e/test-results/
+/e2e/playwright-report/
+/e2e/.cache/

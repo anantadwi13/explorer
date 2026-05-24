@@ -9,6 +9,12 @@
 }
 .toolbar-spacer { flex: 1; }
 
+.toolbar-git {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 @media (max-width: 800px) {
   .toolbar {
     padding: 10px 14px;
@@ -16,4 +22,7 @@
   }
   .toolbar .search { width: 100%; order: 10; }
   .toolbar-spacer { display: none; }
+  /* On mobile the git affordances live in the sidebar drawer header — see
+     LayoutSidebar's `.sidebar-git`. Keep them out of the breadcrumbs row. */
+  .toolbar-git { display: none; }
 }

@@ -1,0 +1,100 @@
+.commits-page {
+  padding: 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.commits-page h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.commits-ref {
+  font-weight: 400;
+  color: var(--fg-muted);
+  font-size: 0.95em;
+}
+
+.commits-empty {
+  color: var(--fg-muted);
+}
+
+.commits-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.commit-card {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.commit-card:hover {
+  border-color: var(--fg-muted);
+}
+
+.commit-subject {
+  color: var(--fg);
+  font-weight: 500;
+  text-decoration: none;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.commit-subject:hover {
+  text-decoration: underline;
+}
+
+.commit-meta {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.commit-sha {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  background: var(--hover);
+  padding: 0 0.4em;
+  border-radius: 3px;
+}
+
+.commit-sep {
+  opacity: 0.5;
+}
+
+.commits-pager {
+  margin: 1rem auto 0;
+  display: block;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  min-height: 44px;
+}
+
+.commits-pager:hover:not(:disabled) {
+  border-color: var(--fg-muted);
+}
+
+.commits-pager:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

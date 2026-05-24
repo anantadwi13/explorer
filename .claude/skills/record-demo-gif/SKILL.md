@@ -20,7 +20,7 @@ From the repo root:
 ./.claude/skills/record-demo-gif/record.sh
 ```
 
-That single command rebuilds the SPA, starts a sandboxed `explorer` instance, drives a headless Chromium through the Chrome DevTools Protocol, captures PNG frames, and stitches them into the two GIFs. It cleans up its own background processes on exit.
+That single command rebuilds the SPA, regenerates the deterministic `testdata/sample-repo` (a git repository — required so the git surface is active in the demo), starts a sandboxed `explorer` instance against it, drives a headless Chromium through the Chrome DevTools Protocol, captures PNG frames, and stitches them into the two GIFs. It cleans up its own background processes on exit.
 
 If `ffmpeg` is missing the script prints how to install it (`sudo apt-get install -y ffmpeg`). The first run installs the `ws` npm package into the skill folder; later runs reuse it.
 
@@ -33,22 +33,23 @@ The recorded interactions live in `record.mjs` under two clearly-marked blocks:
 
 Edit those blocks to change scenes, then re-run `record.sh`.
 
+Both demos run against `testdata/sample-repo` (regenerated on every run by `scripts/sample-repo.sh`) so the new git surface — branch picker, commits list, commit detail diffs, "N changes" badge — is active.
+
 Current desktop sequence:
 
 1. Click `README.md` from the main folder listing → markdown renders.
-2. Smooth-scroll the markdown.
+2. Smooth-scroll the markdown, then snap back to top.
 3. Open the Settings popover → click **Dark** → click breadcrumb to dismiss.
-4. Click `images` folder in the sidebar tree → main pane shows folder.
-5. Click the chevron next to `images` → tree expands.
-6. Click `diagram.svg` from the expanded tree → SVG preview renders.
+4. Click `logo.png` in the sidebar tree → binary image preview opens.
+5. Click the branch picker (`main ▾`) in the toolbar → click **View commits** → click the first commit → commit detail with file diff renders.
 
 Current mobile sequence:
 
 1. Tap `README.md` from the listing → markdown renders.
 2. Scroll, then snap back to top.
 3. Tap the hamburger (`Open folders`) → drawer slides in.
-4. Tap the chevron next to `images` → tree expands inside the drawer.
-5. Tap `diagram.svg` → drawer auto-closes, SVG preview renders.
+4. Tap `logo.png` in the drawer tree → drawer auto-closes, image preview renders.
+5. Re-open the drawer → tap the branch picker (now in the drawer header) → tap **View commits** → commits list renders.
 
 ## How it works (read this before editing)
 
@@ -63,7 +64,7 @@ Current mobile sequence:
 3. Add the `tap` class to fire the pulse.
 4. After ~150 ms, dispatch a real CDP `Input.dispatchMouseEvent` (mousePressed → mouseReleased) at the same coords.
 
-`moveAndClickRoleText(role, text)` is the variant that finds elements by ARIA role + text content (used for the Light/Dark/System theme buttons).
+`moveAndClickRoleText(role, text)` is the variant that finds elements by ARIA role + text content (used for the Light/Dark/System theme buttons). `moveAndClickButtonText(text, containerSel?)` matches a `<button>` by its trimmed text content, optionally scoped to a container CSS selector (used for the branch-picker menu items, which have no ARIA role).
 
 **Theme reset**: every navigation re-runs the inline boot script in `web/index.html`, which reads `localStorage["explorer.theme"]`. To start every recording in light theme regardless of leftover state, the injection sets `localStorage.setItem('explorer.theme', 'light')` before any document script runs.
 
@@ -97,7 +98,14 @@ Mobile-only:
 - Drawer close button: `button[aria-label="Close folders"]`
 - Header theme toggle: `button[aria-label="Toggle theme"]`
 
-Common URL conventions to remember when writing `href$=` selectors: folders end with a trailing slash, files do not. So `/view/images/` is a folder and `/view/images/diagram.svg` is a file.
+Git surface (only present when the served root contains a `.git` entry):
+
+- Branch picker trigger (desktop toolbar + mobile drawer header): `button.branch-picker-trigger`
+- Menu items inside the picker: scope by `.branch-picker-menu` and match by button text — `moveAndClickButtonText('View commits', '.branch-picker-menu')` or `'Local changes'`
+- Commits list page: rows use `<Link className="commit-subject">` — first commit selector is `a.commit-subject`
+- "N changes" badge in the toolbar: `.changes-badge` (link to `/git/status`)
+
+Common URL conventions to remember when writing `href$=` selectors: folders end with a trailing slash, files do not. So `/view/b/` is a folder and `/view/b/new.txt` is a file.
 
 ## Recipes for common changes
 
@@ -105,9 +113,11 @@ Common URL conventions to remember when writing `href$=` selectors: folders end 
 
 **Add a smooth scroll**: park the cursor first with `await moveCursor(x, y, 500)`, then loop `await evalJs("window.scrollBy({top: 32, behavior: 'auto'})"); await sleep(75)` for ~16 iterations.
 
-**Add a new scene that opens a different file**: pick a file under `testdata/`, then add `await moveAndClickSelector('a.row[href$="/view/<path>"]', 700); await sleep(1100);`. For a sidebar click, swap `a.row` for `a.tree-row` and use the trailing-slash convention above. If the file lives inside a folder, expand the chevron first (`button[aria-label="Expand <folder>"]`).
+**Add a new scene that opens a different file**: pick a file inside `testdata/sample-repo/` (or add a fresh fixture to `scripts/sample-repo.sh`), then add `await moveAndClickSelector('a.row[href$="/view/<path>"]', 700); await sleep(1100);`. For a sidebar click, swap `a.row` for `a.tree-row` and use the trailing-slash convention above. If the file lives inside a folder, expand the chevron first (`button[aria-label="Expand <folder>"]`).
 
-**Switch the file shown in the SVG demo**: the test fixture `testdata/images/logo.png` is a 1×1 pixel placeholder that renders as a single dot — use `testdata/images/diagram.svg` instead (it's a small blue rounded rectangle with "SVG" text). If you need a different visual, drop a real image into `testdata/images/` and update the selector.
+**Switch the file shown in the image demo**: `testdata/sample-repo/logo.png` is the 16×16 red square baked in by `scripts/sample-repo.sh`. If you need a different visual, either modify the inline base64 in the script (and accept that commit SHAs in the e2e suite will shift if you put it under version control) or drop a stand-alone untracked image into the repo as a post-step in `record.sh` before launching the explorer.
+
+**Add a git scene**: the served root must be a git repo (the recording uses `testdata/sample-repo` by default). The capability is gated strictly on a `.git` entry at the served root — ancestor `.git`s are not walked. Use the branch-picker selectors above to navigate: open picker → tap **View commits** → tap `a.commit-subject` for the most recent commit → commit detail with diffs renders.
 
 **Change frame rate or output size**: edit `FPS` in `record.mjs` and the `scale=...` filter in `record.sh`. 12 fps + `scale=900:-1` gives ~190 KB for a 16-second desktop clip; bumping to 18 fps roughly doubles the file.
 

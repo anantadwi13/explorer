@@ -183,6 +183,34 @@ async function moveAndClickRoleText(role, text, moveDuration = 500) {
   await tap;
 }
 
+// Find a button whose textContent (trimmed) matches `text`, scoped to an
+// optional CSS container. Useful for menu items that don't have an ARIA role.
+async function getCoordsByButtonText(text, containerSel = '') {
+  const j = await evalJs(`
+    JSON.stringify((() => {
+      const scope = ${containerSel ? `document.querySelector(${JSON.stringify(containerSel)})` : 'document'};
+      if (!scope) return null;
+      const els = [...scope.querySelectorAll('button')];
+      const e = els.find(x => x.textContent.trim() === ${JSON.stringify(text)});
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.left + r.width/2, y: r.top + r.height/2 };
+    })())
+  `);
+  const coords = JSON.parse(j);
+  if (!coords) throw new Error(`button not found: text=${text}${containerSel ? ` in ${containerSel}` : ''}`);
+  return coords;
+}
+
+async function moveAndClickButtonText(text, containerSel = '', moveDuration = 500) {
+  const c = await getCoordsByButtonText(text, containerSel);
+  await moveCursor(c.x, c.y, moveDuration);
+  const tap = tapCursor();
+  await sleep(150);
+  await clickAt(c.x, c.y);
+  await tap;
+}
+
 ws.on('open', async () => {
   try {
     await send('Page.enable');
@@ -215,8 +243,8 @@ ws.on('open', async () => {
 
     if (!mobile) {
       // ====================================================================
-      // DESKTOP TIMELINE — 1280x720
-      // Edit this block to change what the desktop GIF demonstrates.
+      // DESKTOP TIMELINE — 1280x720, served against testdata/sample-repo
+      // (a git repo, so the branch picker + commits surface are active).
       // ====================================================================
 
       // Scene 1: open README.md from the main folder listing
@@ -224,12 +252,14 @@ ws.on('open', async () => {
       await moveAndClickSelector('a.row[href$="/view/README.md"]', 700);
       await sleep(1100);
 
-      // Scene 2: smooth-scroll through the markdown
+      // Scene 2: smooth-scroll through the markdown (short doc — few iters)
       await moveCursor(640, 380, 500);
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 8; i++) {
         await evalJs(`window.scrollBy({top: 32, behavior: 'auto'})`);
-        await sleep(75);
+        await sleep(85);
       }
+      await sleep(300);
+      await evalJs(`window.scrollTo({top: 0, behavior: 'auto'})`);
       await sleep(400);
 
       // Scene 3: open Settings → switch to Dark theme → dismiss popover
@@ -245,21 +275,23 @@ ws.on('open', async () => {
       await clickAt(360, 30);
       await sleep(700);
 
-      // Scene 4: navigate via the sidebar tree
-      // 4a — click the `images` folder link in the tree
-      await moveAndClickSelector('a.tree-row[href$="/view/images/"]', 700);
+      // Scene 4: tree navigation → preview the binary logo image
+      await moveAndClickSelector('a.tree-row[href$="/view/logo.png"]', 700);
+      await sleep(1400);
+
+      // Scene 5: git surface — open the branch picker, jump to the commits
+      // list, then drill into the most recent commit to see its diff.
+      // The picker, list, and detail page are all part of the new git-reader
+      // capability and only render when the served root is a git repository.
+      await moveAndClickSelector('button.branch-picker-trigger', 600);
+      await sleep(700);
+      await moveAndClickButtonText('View commits', '.branch-picker-menu', 500);
       await sleep(1100);
-      // 4b — expand `images` via its chevron (chevron stops propagation, so the
-      //      tree expands without re-navigating)
-      await moveAndClickSelector('button[aria-label="Expand images"]', 600);
-      await sleep(750);
-      // 4c — click `diagram.svg` inside the expanded tree → image preview opens
-      await moveAndClickSelector('a.tree-row[href$="/view/images/diagram.svg"]', 600);
-      await sleep(1500);
+      await moveAndClickSelector('a.commit-subject', 600);
+      await sleep(2200);
     } else {
       // ====================================================================
-      // MOBILE TIMELINE — 390x720
-      // Edit this block to change what the mobile GIF demonstrates.
+      // MOBILE TIMELINE — 390x720, served against testdata/sample-repo.
       // ====================================================================
 
       // Scene 1: open README.md from the main listing
@@ -269,11 +301,11 @@ ws.on('open', async () => {
 
       // Scene 2: scroll the markdown, then snap back so the header is visible
       await moveCursor(195, 500, 500);
-      for (let i = 0; i < 14; i++) {
+      for (let i = 0; i < 8; i++) {
         await evalJs(`window.scrollBy({top: 32, behavior: 'auto'})`);
-        await sleep(85);
+        await sleep(95);
       }
-      await sleep(500);
+      await sleep(400);
       await evalJs(`window.scrollTo({top: 0, behavior: 'auto'})`);
       await sleep(400);
 
@@ -281,15 +313,21 @@ ws.on('open', async () => {
       await moveAndClickSelector('button[aria-label="Open folders"]', 600);
       await sleep(800); // drawer slide-in
 
-      // Scene 4: expand `images` via its chevron — drawer stays open.
-      // minX:0 keeps us from clicking the still-translating off-screen rect.
-      await moveAndClickSelector('button[aria-label="Expand images"]', 500, { minX: 0 });
-      await sleep(750);
-
-      // Scene 5: tap diagram.svg → drawer auto-closes (closeSidebar fires on
+      // Scene 4: tap logo.png → drawer auto-closes (closeSidebar fires on
       //          file Link click), image preview renders in the main pane.
-      await moveAndClickSelector('a.tree-row[href$="/view/images/diagram.svg"]', 500, { minX: 0 });
+      // minX:0 guards against clicking the still-translating off-screen rect.
+      await moveAndClickSelector('a.tree-row[href$="/view/logo.png"]', 500, { minX: 0 });
       await sleep(1500);
+
+      // Scene 5: reopen the drawer to reach the git surface — on mobile the
+      // BranchPicker lives in the drawer header (LayoutSidebar). Tap it,
+      // then jump to the commits list for the current branch.
+      await moveAndClickSelector('button[aria-label="Open folders"]', 500);
+      await sleep(700);
+      await moveAndClickSelector('button.branch-picker-trigger', 500, { minX: 0 });
+      await sleep(700);
+      await moveAndClickButtonText('View commits', '.branch-picker-menu', 500);
+      await sleep(1800);
     }
 
     stopped = true;

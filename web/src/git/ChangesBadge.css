@@ -1,0 +1,28 @@
+.changes-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  text-decoration: none;
+  color: var(--fg);
+  font-size: 0.85rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: var(--radius);
+  min-height: 32px;
+}
+
+.changes-badge:hover {
+  border-color: var(--fg-muted);
+  text-decoration: none;
+}
+
+.changes-badge-dot {
+  color: var(--color-diff-add-fg);
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.changes-badge-count {
+  white-space: nowrap;
+}

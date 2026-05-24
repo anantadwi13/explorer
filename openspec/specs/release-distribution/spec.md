@@ -133,7 +133,7 @@ When a release-built binary is invoked with `--version` (or its `-v` alias), it 
 <tag> (commit <short-sha>, built <utc-yyyy-mm-dd>)
 ```
 
-and exit with status 0, before any directory-argument validation. (The CLI flag itself, including the precedence-over-positional behaviour, is normatively specified in the `directory-browser` capability — this requirement only constrains the values that release builds inject.)
+and exit with status 0, before any directory-argument validation. (The CLI flag itself, including the precedence-over-positional behaviour, is normatively specified in the `cli` capability — this requirement only constrains the values that release builds inject.)
 
 When the binary is built locally without these ldflags (e.g. `make build`, `go install`, `go run`), it SHALL print the line:
 
