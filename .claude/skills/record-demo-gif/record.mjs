@@ -71,11 +71,16 @@ const CURSOR_INJECT = `
       <style>
         #__cursor { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 2147483647; transform: translate(-200px, -200px); transition: transform 600ms cubic-bezier(.22,.61,.36,1); }
         #__cursor svg { position: absolute; left: -2px; top: -2px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
-        #__cursor .ring { position: absolute; left: 0; top: 0; width: 36px; height: 36px; margin: -18px 0 0 -18px; border: 2px solid rgba(255, 99, 38, .95); border-radius: 50%; opacity: 0; transform: scale(.2); }
-        #__cursor.tap .ring { animation: __cursorTap 420ms ease-out; }
+        /* Larger, thicker, partly-filled ring so it survives the GIF's
+           128-color palette and reads on both light and dark backgrounds.
+           Animation is slower (650ms) so the recorder captures ~8 frames of
+           it at 12 fps instead of ~5. */
+        #__cursor .ring { position: absolute; left: 0; top: 0; width: 44px; height: 44px; margin: -22px 0 0 -22px; border: 4px solid rgba(255, 90, 30, 1); background: rgba(255, 90, 30, .35); border-radius: 50%; opacity: 0; transform: scale(.25); }
+        #__cursor.tap .ring { animation: __cursorTap 650ms ease-out; }
         @keyframes __cursorTap {
-          0%   { transform: scale(.2); opacity: .9; }
-          100% { transform: scale(1.6); opacity: 0; }
+          0%   { transform: scale(.25); opacity: 1; }
+          60%  { transform: scale(1.0);  opacity: .7; }
+          100% { transform: scale(1.7);  opacity: 0; }
         }
       </style>
       <span class="ring"></span>
@@ -156,13 +161,23 @@ async function tapCursor() {
     void c.offsetWidth;
     c.classList.add('tap');
   })()`);
-  await sleep(420);
+  // Match the keyframe duration in CURSOR_INJECT (650ms) so callers that
+  // `await tap;` don't release before the ring finishes fading.
+  await sleep(650);
 }
 
 async function clickAt(x, y) {
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
   await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+}
+
+// SettingsMenu listens for Escape on window — use this to dismiss the popover
+// without picking a coordinate that might land on a listing row, the
+// breadcrumb, or some other clickable element.
+async function pressEscape() {
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 }
 
 async function moveAndClickSelector(sel, moveDuration = 600, opts = {}) {
@@ -217,10 +232,16 @@ ws.on('open', async () => {
     await send('Runtime.enable');
     await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
 
-    // Force a clean light-theme starting point on every navigation, and inject
-    // the synthetic cursor.
+    // Force a clean starting point on every full navigation (light theme,
+    // list view), and inject the synthetic cursor. Resetting `explorer.view`
+    // matters because both runs share the same Chromium profile — without
+    // this, a Grid pick during the desktop run would persist into the mobile
+    // run and break selectors like `a.row[…]` that only exist in list view.
     await send('Page.addScriptToEvaluateOnNewDocument', {
-      source: `try { localStorage.setItem('explorer.theme', 'light'); } catch (e) {}\n` + CURSOR_INJECT,
+      source:
+        `try { localStorage.setItem('explorer.theme', 'light'); } catch (e) {}\n` +
+        `try { localStorage.setItem('explorer.view', 'list'); } catch (e) {}\n` +
+        CURSOR_INJECT,
     });
 
     const loaded = once('Page.loadEventFired');
@@ -247,12 +268,39 @@ ws.on('open', async () => {
       // (a git repo, so the branch picker + commits surface are active).
       // ====================================================================
 
-      // Scene 1: open README.md from the main folder listing
+      // Scene 1: open Settings on the folder listing → Dark theme → flip
+      //          View to Grid (folder visibly switches to tiles) → flip back
+      //          to List so the subsequent `a.row` selectors still resolve →
+      //          dismiss. The popover holds the three global-preference rows
+      //          (Theme, Density, View), so dwell long enough that the whole
+      //          panel is visible.
       await sleep(600);
+      await moveAndClickSelector('button[aria-label="Settings"]', 650);
+      await sleep(650);
+      await moveAndClickRoleText('radio', 'Dark', 450);
+      await sleep(900);
+      await moveAndClickRoleText('radio', 'Grid', 450);
+      await sleep(1400); // dwell so the list→grid transition is visible
+      await moveAndClickRoleText('radio', 'List', 450);
+      await sleep(800);
+      // Dismiss by clicking outside the popover with a visible cursor
+      // animation + tap ring. (700, 65) lands in the empty right-hand side
+      // of the toolbar's path row — past the breadcrumb text, and well left
+      // of the popover (which anchors right against the Settings gear).
+      // Hits the inert `.toolbar-path` div, so the click only fires
+      // useClickOutside; nothing else navigates.
+      await moveCursor(700, 65, 500);
+      const desktopDismissTap = tapCursor();
+      await sleep(150);
+      await clickAt(700, 65);
+      await desktopDismissTap;
+      await sleep(600);
+
+      // Scene 2: open README.md from the main folder listing
       await moveAndClickSelector('a.row[href$="/view/README.md"]', 700);
       await sleep(1100);
 
-      // Scene 2: smooth-scroll through the markdown (short doc — few iters)
+      // Scene 3: smooth-scroll through the markdown (short doc — few iters)
       await moveCursor(640, 380, 500);
       for (let i = 0; i < 8; i++) {
         await evalJs(`window.scrollBy({top: 32, behavior: 'auto'})`);
@@ -261,19 +309,6 @@ ws.on('open', async () => {
       await sleep(300);
       await evalJs(`window.scrollTo({top: 0, behavior: 'auto'})`);
       await sleep(400);
-
-      // Scene 3: open Settings → switch to Dark theme → dismiss popover
-      await moveAndClickSelector('button[aria-label="Settings"]', 650);
-      await sleep(450);
-      await moveAndClickRoleText('radio', 'Dark', 450);
-      await sleep(900);
-      // Real CDP click is required to fire useClickOutside (mousedown listener) —
-      // an in-page `.click()` won't dismiss the popover.
-      await moveCursor(360, 30, 400);
-      await tapCursor();
-      await sleep(120);
-      await clickAt(360, 30);
-      await sleep(700);
 
       // Scene 4: tree navigation → preview the binary logo image
       await moveAndClickSelector('a.tree-row[href$="/view/logo.png"]', 700);
@@ -294,12 +329,37 @@ ws.on('open', async () => {
       // MOBILE TIMELINE — 390x720, served against testdata/sample-repo.
       // ====================================================================
 
-      // Scene 1: open README.md from the main listing
+      // Scene 1: tap the Settings gear in the topbar (it replaced the old
+      //           standalone theme toggle) → Dark → flip View to Grid (the
+      //           folder listing visibly switches to tiles) → flip back to
+      //           List so later `a.row` selectors resolve → dismiss. The
+      //           popover anchors right and stays inside the viewport at
+      //           390 px, holding Theme, Density, and View rows.
       await sleep(700);
+      await moveAndClickSelector('button[aria-label="Settings"]', 600);
+      await sleep(700);
+      await moveAndClickRoleText('radio', 'Dark', 450);
+      await sleep(900);
+      await moveAndClickRoleText('radio', 'Grid', 450);
+      await sleep(1400);
+      await moveAndClickRoleText('radio', 'List', 450);
+      await sleep(800);
+      // Dismiss by clicking outside the popover (see desktop note). On
+      // mobile the popover at width 390 sits at x≈164-378, y≈58-280; the
+      // breadcrumb path row is y≈102-127. (120, 115) is past the "Home"
+      // breadcrumb text, left of the popover, and well above the listing.
+      await moveCursor(120, 115, 500);
+      const mobileDismissTap = tapCursor();
+      await sleep(150);
+      await clickAt(120, 115);
+      await mobileDismissTap;
+      await sleep(600);
+
+      // Scene 2: open README.md from the main listing
       await moveAndClickSelector('a.row[href$="/view/README.md"]', 600);
       await sleep(1300);
 
-      // Scene 2: scroll the markdown, then snap back so the header is visible
+      // Scene 3: scroll the markdown, then snap back so the header is visible
       await moveCursor(195, 500, 500);
       for (let i = 0; i < 8; i++) {
         await evalJs(`window.scrollBy({top: 32, behavior: 'auto'})`);
@@ -309,25 +369,28 @@ ws.on('open', async () => {
       await evalJs(`window.scrollTo({top: 0, behavior: 'auto'})`);
       await sleep(400);
 
-      // Scene 3: open the drawer via the hamburger
+      // Scene 4: open the drawer via the hamburger
       await moveAndClickSelector('button[aria-label="Open folders"]', 600);
       await sleep(800); // drawer slide-in
 
-      // Scene 4: tap logo.png → drawer auto-closes (closeSidebar fires on
+      // Scene 5: tap logo.png → drawer auto-closes (closeSidebar fires on
       //          file Link click), image preview renders in the main pane.
       // minX:0 guards against clicking the still-translating off-screen rect.
       await moveAndClickSelector('a.tree-row[href$="/view/logo.png"]', 500, { minX: 0 });
       await sleep(1500);
 
-      // Scene 5: reopen the drawer to reach the git surface — on mobile the
+      // Scene 6: reopen the drawer to reach the git surface — on mobile the
       // BranchPicker lives in the drawer header (LayoutSidebar). Tap it,
-      // then jump to the commits list for the current branch.
+      // jump to the commits list, then drill into the most recent commit so
+      // the diff view renders before the recording ends.
       await moveAndClickSelector('button[aria-label="Open folders"]', 500);
       await sleep(700);
       await moveAndClickSelector('button.branch-picker-trigger', 500, { minX: 0 });
       await sleep(700);
       await moveAndClickButtonText('View commits', '.branch-picker-menu', 500);
-      await sleep(1800);
+      await sleep(1400);
+      await moveAndClickSelector('a.commit-subject', 600);
+      await sleep(2200);
     }
 
     stopped = true;
