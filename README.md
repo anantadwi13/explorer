@@ -13,11 +13,11 @@
 A single-binary local directory browser — point it at a folder, open the URL, read everything in place from your phone on the same Wi-Fi.
 
 <p align="center">
-  <img src="docs/desktop.gif" alt="explorer on the desktop: browse a folder, open a markdown file, switch to dark theme" width="820"/>
+  <img src="docs/desktop.gif" alt="explorer on the desktop: browse a git repo, open a markdown file, switch to dark theme, preview a binary, and drill into a commit diff" width="820"/>
 </p>
 
 <p align="center">
-  <img src="docs/mobile.gif" alt="explorer on mobile: open a folder, tap a markdown file, scroll" width="320"/>
+  <img src="docs/mobile.gif" alt="explorer on mobile: open a markdown file, scroll, browse the tree, and jump to the commits list via the branch picker" width="320"/>
 </p>
 
 ## Why explorer?
