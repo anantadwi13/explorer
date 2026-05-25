@@ -46,11 +46,28 @@
   overflow-x: auto;
 }
 
-/* Inner wrapper: in wrap-off, sizes to the widest line so background tints
-   extend across the full scrollable width. In wrap-on, behaves as a normal
-   block (lines wrap inside their own width = parent width). */
+/* Inner wrapper is the grid container — defines the column tracks once for
+   the whole hunk so the [old | new | marker | text | filler] columns align
+   across all rows. `.diff-line` uses `grid-template-columns: subgrid` and
+   `grid-column: 1 / -1` so each line spans all five tracks.
+
+   The trailing `1fr` filler track exists so the row's background tint
+   reaches the right edge of the hunk body when the widest line is shorter
+   than the available width — without it the explicit tracks size to
+   `max-content` only, leaving dead space to the right of the text that the
+   row tint can't cover. In wrap-off the wrapper is `width: max-content;
+   min-width: 100%`; the `1fr` absorbs the extra width once content is
+   shorter than 100%. In wrap-on the wrapper is naturally 100% of its
+   parent; the `1fr` absorbs the gap to the right of short lines.
+
+   `--gutter-old-w` / `--gutter-new-w` are set per-hunk from `DiffHunk.tsx`
+   (`gutterWidthStyle`), sized to the digit count of the largest number
+   shown. Fallbacks of 3ch keep the layout sensible if the inline style is
+   missing. The column widths and the sticky `left` offsets below both read
+   from these vars, so they stay aligned regardless of digit count. */
 .diff-hunk-lines {
-  display: block;
+  display: grid;
+  grid-template-columns: var(--gutter-old-w, 3ch) var(--gutter-new-w, 3ch) 1.25ch minmax(0, max-content) 1fr;
 }
 
 .diff-hunk-body.wrap-off .diff-hunk-lines {
@@ -58,14 +75,25 @@
   min-width: 100%;
 }
 
+/* Each diff line participates in the parent `.diff-hunk-lines` grid as a
+   single subgrid row spanning all four columns. Subgrid keeps the gutter
+   columns aligned across all rows — without it, each `.diff-line` would
+   compute its own column widths independently and short-text rows would
+   give their extra space to the gutter, misaligning numbers vertically. */
 .diff-line {
-  display: block;
-  padding-left: 0.5rem;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+}
+
+.diff-gutter {
+  text-align: right;
+  user-select: none;
+  color: var(--fg-muted);
+  padding: 0 0.5ch;
 }
 
 .diff-line-marker {
-  display: inline-block;
-  width: 1.25ch;
   text-align: center;
   color: var(--fg-muted);
   user-select: none;
@@ -89,4 +117,63 @@
 
 .diff-line-context {
   color: var(--fg);
+}
+
+/* Row-tint inheritance: the gutter and marker cells of a row carry the same
+   tint as the diff text so the row reads as one continuous band. Context
+   rows match the `.diff-hunk` ancestor background — keep these in sync if
+   the hunk-body background ever changes.
+
+   `--color-diff-add-bg` / `--color-diff-del-bg` are translucent rgba tints
+   meant to composite over `--bg-soft` on the non-sticky row. The gutter and
+   marker cells are `position: sticky` in wrap-off mode, so they need a fully
+   opaque background — otherwise horizontally-scrolled diff text shows
+   through. We layer an opaque `--bg-soft` base under the translucent tint
+   (via background-image) so the visible colour matches the rest of the row
+   but the cell occludes scrolled content beneath it. */
+.diff-line-context > .diff-gutter,
+.diff-line-context > .diff-line-marker {
+  background: var(--bg-soft);
+}
+
+.diff-line-add > .diff-gutter,
+.diff-line-add > .diff-line-marker {
+  background-color: var(--bg-soft);
+  background-image: linear-gradient(var(--color-diff-add-bg), var(--color-diff-add-bg));
+}
+
+.diff-line-del > .diff-gutter,
+.diff-line-del > .diff-line-marker {
+  background-color: var(--bg-soft);
+  background-image: linear-gradient(var(--color-diff-del-bg), var(--color-diff-del-bg));
+}
+
+/* Wrap-off: pin gutter columns and the marker to the left edge of the
+   scrolling diff body so a horizontally-scrolled long line still shows its
+   numbers and type. Offsets read from `--gutter-old-w` / `--gutter-new-w`
+   so they track the actual column widths set on `.diff-hunk-lines` above —
+   this is what keeps the marker aligned for 3+ digit line numbers. */
+.diff-hunk-body.wrap-off .diff-gutter-old {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.diff-hunk-body.wrap-off .diff-gutter-new {
+  position: sticky;
+  left: var(--gutter-old-w, 3ch);
+  z-index: 1;
+}
+
+.diff-hunk-body.wrap-off .diff-line-marker {
+  position: sticky;
+  left: calc(var(--gutter-old-w, 3ch) + var(--gutter-new-w, 3ch));
+  z-index: 1;
+}
+
+@media (max-width: 767px) {
+  .diff-gutter {
+    font-size: 0.75rem;
+    padding: 0 0.25ch;
+  }
 }

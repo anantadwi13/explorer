@@ -43,10 +43,10 @@ Constraints from the codebase:
 
 **Choice:** Each logical line is a CSS Grid row. Column templates:
 
-- **File viewer (`CodeBlock`)**: `grid-template-columns: minmax(3ch, auto) minmax(0, 1fr)` — gutter column with a minimum 3ch floor so it does not collapse when the file is short; content column that fills the remaining width and can shrink to zero on narrow viewports (the `minmax(0, 1fr)` is the standard guard against grid items overflowing their column).
-- **Diff (`DiffHunk`)**: `grid-template-columns: minmax(3ch, auto) minmax(3ch, auto) 1.25ch minmax(0, max-content)` — old gutter, new gutter, marker (replacing the old `.diff-line-marker { width: 1.25ch }` rule, which has no effect on grid items), and the text column. `max-content` (not `1fr`) is used because the diff hunk body in wrap-off mode is wrapped by `.diff-hunk-lines { width: max-content }` so the longest line's intrinsic width drives the row width; `1fr` would collapse to zero inside a `max-content` container (a known grid quirk).
+- **File viewer (`CodeBlock`)**: `grid-template-columns: minmax(3ch, auto) minmax(0, 1fr)` — gutter column with a minimum 3ch floor so it does not collapse when the file is short; content column that fills the remaining width and can shrink to zero on narrow viewports (the `minmax(0, 1fr)` is the standard guard against grid items overflowing their column). In wrap-off mode the grid itself MUST also be `width: max-content; min-width: 100%` (mirrors the diff side below), otherwise long lines overflow the `1fr` cell into `pre`'s scroll area but the grid stays at viewport width — the sticky `.line-no` cell's containing block then ends before the right edge of the scroll area and the gutter scrolls off-screen past the original viewport.
+- **Diff (`DiffHunk`)**: `grid-template-columns: var(--gutter-old-w, 3ch) var(--gutter-new-w, 3ch) 1.25ch minmax(0, max-content) 1fr` — old gutter, new gutter, marker (replacing the old `.diff-line-marker { width: 1.25ch }` rule, which has no effect on grid items), the text column, and a trailing `1fr` filler track. The gutter widths are sized by per-hunk CSS variables (see Decision 5). `max-content` on the text track (not `1fr`) is required because the wrap-off ancestor is `width: max-content` and `1fr` collapses to zero inside a `max-content` container (a known grid quirk). The trailing `1fr` filler exists so each row's tint reaches the right edge of the hunk body even when the widest line is shorter than the available width — without it, short add/del rows would tint only as far as the text column extends and the visible band would stop mid-row. The `.diff-line` spans `grid-column: 1 / -1` so the row background covers all five tracks; the filler track has no children.
 
-Gutter columns get a 3ch minimum so an all-`del` hunk's empty new-column does not collapse the column to zero width and visually misalign vs neighbouring hunks.
+Gutter columns get a 3ch minimum (via the `gutterWidthStyle` floor in `DiffHunk.tsx`) so an all-`del` hunk's empty new-column does not collapse the column to zero width and visually misalign vs neighbouring hunks.
 
 **Why:** Grid solves the central layout problem — a wrapped line occupies multiple visual rows but must show the line number only once, top-aligned to the first row. Grid rows naturally size to the content cell's wrapped height while the gutter cell stays a single number at the top. `display: table` would also work but does not play well with `position: sticky` cells the way grid does.
 
@@ -76,22 +76,24 @@ Gutter columns get a 3ch minimum so an all-`del` hunk's empty new-column does no
 
 **Rejected:** Whole-file highlight followed by hast-tree post-processing to split on `\n` while preserving open spans. More fidelity, much more code surface, more bug surface.
 
-### Decision 4: Diff gutter cell inherits row tint, not panel background
+### Decision 4: Diff gutter cell inherits row tint via an opaque base + tint layer
 
-**Choice:** Each gutter cell carries the same background as its parent line type:
-- `.diff-line-context > .diff-gutter` → transparent (inherits hunk body background)
-- `.diff-line-add > .diff-gutter` → `var(--color-diff-add-bg)`
-- `.diff-line-del > .diff-gutter` → `var(--color-diff-del-bg)`
+**Choice:** Each gutter (and marker) cell on a tinted row gets two stacked backgrounds — an opaque `--bg-soft` base layer plus the translucent row tint composed via `background-image: linear-gradient(...)`. The full rule set:
+- `.diff-line-context > .diff-gutter, .diff-line-context > .diff-line-marker` → `background: var(--bg-soft)` (opaque).
+- `.diff-line-add > .diff-gutter, .diff-line-add > .diff-line-marker` → `background-color: var(--bg-soft); background-image: linear-gradient(var(--color-diff-add-bg), var(--color-diff-add-bg))`.
+- `.diff-line-del > .diff-gutter, .diff-line-del > .diff-line-marker` → same shape with `--color-diff-del-bg`.
 
-**Why:** Without this, a sticky gutter on a tinted row shows up as a panel-coloured rectangle slicing through the row, breaking the row's visual continuity. With it, the row's tint extends through the gutter and the eye reads the line as one band.
+**Why:** The `--color-diff-*-bg` tokens are deliberately translucent (rgba alpha ~0.18–0.22) so they composite over `--bg-soft` on the normal scrolling row. A sticky-left cell in wrap-off has no `--bg-soft` ancestor *inside the sticky cell itself*, so a single translucent tint would let horizontally-scrolled diff text bleed through. Stacking the opaque base under the same translucent tint produces the identical visible colour as the non-sticky row while fully occluding scrolled content. Context-row gutters use the opaque `--bg-soft` directly because that *is* the hunk body background.
 
-**Trade-off:** Slightly more CSS (three selectors instead of one). Worth it; the alternative looks broken on every add/del row.
+**Trade-off:** Each tinted row needs two background-related properties (`background-color` + `background-image`) instead of one. Worth it; the single-translucent-tint approach was broken under wrap-off scroll, as found in manual verification.
 
-### Decision 5: Two sticky columns side-by-side for the diff gutter
+### Decision 5: Two sticky columns side-by-side for the diff gutter, sized by per-hunk CSS variables
 
-**Choice:** Both old and new gutter cells use `position: sticky` with explicit `left` offsets — old at `left: 0`, new at `left: <old-col-width>`. The old-col-width is derived from `ch` units to keep it predictable across themes (e.g. `left: 5ch` if old occupies 4ch + 1ch padding).
+**Choice:** Both old and new gutter cells use `position: sticky` with explicit `left` offsets — old at `left: 0`, new at `left: var(--gutter-old-w, 3ch)`, marker at `left: calc(var(--gutter-old-w, 3ch) + var(--gutter-new-w, 3ch))` (see Decision 8). The same `--gutter-old-w` / `--gutter-new-w` variables also drive the explicit column tracks on `.diff-hunk-lines` (see Decision 1), so the sticky offsets always equal the rendered column widths — no `ch` arithmetic drift when line numbers grow.
 
-**Why:** Two independent sticky cells composes cleanly with the existing per-line `<span>` structure and avoids introducing a new wrapper element. A single sticky wrapper around both would also work but would force a layout refactor of `.diff-line` to nest the marker inside it.
+The variables are computed per hunk in `DiffHunk.tsx:gutterWidthStyle` from the largest old/new line number actually rendered, using `max(digits, 2) + 1ch` (the `.diff-gutter` rule applies 0.5ch padding on each side), floored at `3ch`. So a hunk with `old_start=100` gets `--gutter-old-w: 4ch`, a 4-digit hunk gets `5ch`, and an all-add hunk keeps `3ch` on the old side because the floor wins.
+
+**Why:** Two independent sticky cells compose cleanly with the existing per-line `<span>` structure and avoids introducing a new wrapper element. A single sticky wrapper around both would also work but would force a layout refactor of `.diff-line` to nest the marker inside it. Deriving the offsets from the same CSS variables that size the columns is what keeps the marker pinned in the right place once line numbers cross 99 — hard-coded `ch` offsets break at that boundary because `minmax(3ch, max-content)` lets the column grow but a hard-coded `left: 3ch` does not follow.
 
 **Alternative considered:** Wrap both gutter columns plus the marker into one sticky `<span>` per line. Slightly cleaner stacking context but requires moving the marker out of its current position, which has a settled palette in `DiffHunk.css`. Skipped to keep this change additive.
 
@@ -117,7 +119,7 @@ Gutter columns get a 3ch minimum so an all-`del` hunk's empty new-column does no
 
 **Why:** If only the gutter pinned, a horizontally scrolled long line would show numbers but not the line type — readers would have to scroll back to remember whether the line they are reading is an addition, deletion, or context. The marker is part of "where am I", not part of "what does this say", so it belongs with the gutter on the pinned side.
 
-**How:** Same `position: sticky` primitive as the gutter cells, with an explicit `left` offset (`left: <old-col-width> + <new-col-width>`) and a background matching the row tint (`var(--color-diff-add-bg)` / `var(--color-diff-del-bg)` / hunk body bg) so the row tint stays continuous.
+**How:** Same `position: sticky` primitive as the gutter cells, with `left: calc(var(--gutter-old-w, 3ch) + var(--gutter-new-w, 3ch))` (the same vars that size the gutter columns — see Decision 5) and the same opaque-base + tint composition as the gutter cells (see Decision 4) so the row tint stays continuous and scrolled diff text cannot bleed through.
 
 ### Decision 9: DOM shape — keep `<pre><code>` wrapper, make `<code>` the grid container
 
