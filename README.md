@@ -51,9 +51,9 @@ Invoke-WebRequest -Uri https://github.com/anantadwi13/explorer/releases/download
 .\explorer.exe .
 ```
 
-### Download the archive (with LICENSE + README)
+### Download the archive
 
-Same binary inside, plus `LICENSE` and `README.md` at the same directory level. The unix archive preserves the executable bit, so no `chmod` is needed after extracting.
+Same binary inside an archive. The unix archive preserves the executable bit, so no `chmod` is needed after extracting.
 
 ```bash
 # linux/amd64
@@ -109,7 +109,7 @@ Requires Go 1.24+.
 go install github.com/anantadwi13/explorer/cmd/explorer@latest
 ```
 
-This drops an `explorer` binary in `$GOBIN` (or `$GOPATH/bin` — make sure it is on your `PATH`). Once tagged releases exist, pin a version with `@v0.2.0` instead of `@latest`.
+This drops an `explorer` binary in `$GOBIN` (or `$GOPATH/bin` — make sure it is on your `PATH`). Pin a specific version with `@v0.3.0` instead of `@latest` if you prefer.
 
 To try it without installing:
 
