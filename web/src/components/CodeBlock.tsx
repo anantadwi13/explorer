@@ -27,29 +27,50 @@ function renderHastToReact(node: HastNode, key: number): ReactNode {
   return null
 }
 
+// highlightLine tokenises a single line with the given grammar. Errors fall
+// back to the raw text — never a crash. Mirrors DiffHunk.highlightLine.
+function highlightLine(text: string, language: string): ReactNode {
+  try {
+    const result = lowlight.highlight(language, text)
+    return result.children.map((child, i) => renderHastToReact(child as HastNode, i))
+  } catch {
+    return text
+  }
+}
+
+// splitLines splits source by \n and drops a trailing empty element if the
+// file ends in \n. So "a\nb\n" → ["a", "b"] (the trailing-newline rule from
+// design.md Decision 10). Matches how git, editors, and wc -l count lines.
+function splitLines(code: string): string[] {
+  const parts = code.split('\n')
+  if (parts.length > 0 && parts[parts.length - 1] === '') {
+    parts.pop()
+  }
+  return parts
+}
+
 export default function CodeBlock({ code, language, wrap = true }: Props) {
   const isRegistered = language !== null && lowlight.registered(language)
+  const lines = splitLines(code)
 
-  let inner: ReactNode
-
-  if (isRegistered) {
-    const result = lowlight.highlight(language!, code)
-    inner = result.children.map((child, i) =>
-      renderHastToReact(child as HastNode, i)
-    )
-  } else {
-    inner = code
-  }
-
-  const codeClass = isRegistered
-    ? `hljs language-${language}`
-    : 'hljs'
-
+  const codeClass = isRegistered ? `hljs language-${language}` : 'hljs'
   const preClass = `code-block ${wrap ? 'wrap-on' : 'wrap-off'}`
 
   return (
     <pre className={preClass}>
-      <code className={codeClass}>{inner}</code>
+      <code className={codeClass}>
+        {lines.map((line, i) => {
+          const rendered: ReactNode = isRegistered
+            ? highlightLine(line || ' ', language!)
+            : line || ' '
+          return (
+            <span key={i} className="code-line">
+              <span className="line-no" aria-hidden="true">{i + 1}</span>
+              <span className="line-text">{rendered}</span>
+            </span>
+          )
+        })}
+      </code>
     </pre>
   )
 }

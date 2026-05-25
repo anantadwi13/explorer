@@ -79,16 +79,14 @@
   flex: 1;
   min-width: 0;
 }
-.text-body,
 .code-block {
   margin: 0;
-  padding: 24px 28px;
+  padding: 24px 28px 24px 0;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
   color: var(--fg);
 }
-.text-body,
 .code-block.wrap-on {
   white-space: pre-wrap;
   word-break: break-word;
@@ -101,12 +99,50 @@
   overflow-wrap: normal;
   overflow-x: auto;
 }
+/* Each logical line is a CSS Grid row: [gutter | text]. The 3ch minimum on
+   the gutter prevents collapse on short files; the text column uses
+   minmax(0, 1fr) so it can shrink to zero on narrow viewports without
+   overflowing the grid. `.code-line` uses `display: contents` so the gutter
+   and text spans become direct grid items of `<code>` — without this, each
+   `.code-line` would occupy a single grid cell and the layout would
+   interleave numbers and text across rows. */
 .code-block code {
+  display: grid;
+  grid-template-columns: minmax(3ch, auto) minmax(0, 1fr);
   font-family: inherit;
   font-size: inherit;
   background: transparent;
   padding: 0;
   border-radius: 0;
+}
+/* In wrap-off mode long lines overflow the 1fr text cell and trigger
+   horizontal scroll on the `pre`. The grid itself must grow to max-content
+   so the sticky `.line-no` cell's containing block extends past the viewport
+   — otherwise sticky stops sticking past the grid's right edge and the
+   gutter scrolls off-screen. `min-width: 100%` keeps the grid filling the
+   viewport when content is shorter than one screen. Mirrors the equivalent
+   `.diff-hunk-body.wrap-off .diff-hunk-lines` rule in DiffHunk.css. */
+.code-block.wrap-off code {
+  width: max-content;
+  min-width: 100%;
+}
+.code-line {
+  display: contents;
+}
+.line-no {
+  text-align: right;
+  user-select: none;
+  color: var(--fg-muted);
+  padding: 0 1ch;
+  background: var(--bg-panel);
+}
+.line-text {
+  min-width: 0;
+}
+.code-block.wrap-off .line-no {
+  position: sticky;
+  left: 0;
+  z-index: 1;
 }
 
 .vw-fallback {

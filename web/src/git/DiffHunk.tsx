@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type { Element, Root, Text } from 'hast'
 import type { GitHunk } from '../api/types'
 import { lowlight } from '../components/syntax/grammars'
@@ -28,6 +28,8 @@ interface Props {
 export default function DiffHunk({ hunk, language, wrap = true }: Props) {
   const headerText = `@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@${hunk.header ? ' ' + hunk.header : ''}`
   const useHljs = !!language && lowlight.registered(language)
+  const lineNumbers = computeLineNumbers(hunk)
+  const gutterStyle = gutterWidthStyle(lineNumbers)
   return (
     <div className="diff-hunk" role="group" aria-label={headerText}>
       <div className="diff-hunk-header">{headerText}</div>
@@ -38,17 +40,22 @@ export default function DiffHunk({ hunk, language, wrap = true }: Props) {
           Each `.diff-line` inside then takes 100% of the wrapper, so the
           add/del background tints extend across the full horizontally-
           scrollable width rather than stopping at the visible viewport.
+          `--gutter-old-w` / `--gutter-new-w` size both the grid columns AND
+          the sticky-left offsets in wrap-off mode, so they stay aligned for
+          any digit count (lines >99 grow the column to ~4ch and beyond).
         */}
-        <span className="diff-hunk-lines">
+        <span className="diff-hunk-lines" style={gutterStyle}>
           {hunk.lines.map((l, i) => {
             const marker = l.type === 'add' ? '+' : l.type === 'del' ? '−' : ' '
             const text = l.text || ' '
             const content = useHljs ? highlightLine(text, language!) : text
+            const { oldNo, newNo } = lineNumbers[i]
             return (
               <span key={i} className={`diff-line diff-line-${l.type}`}>
+                <span className="diff-gutter diff-gutter-old" aria-hidden="true">{oldNo ?? ''}</span>
+                <span className="diff-gutter diff-gutter-new" aria-hidden="true">{newNo ?? ''}</span>
                 <span className="diff-line-marker" aria-hidden="true">{marker}</span>
                 <span className={useHljs ? 'diff-line-text hljs' : 'diff-line-text'}>{content}</span>
-                {'\n'}
               </span>
             )
           })}
@@ -56,6 +63,54 @@ export default function DiffHunk({ hunk, language, wrap = true }: Props) {
       </pre>
     </div>
   )
+}
+
+// computeLineNumbers walks a hunk once and produces the per-line (oldNo, newNo)
+// pair, starting from the hunk's old_start / new_start. Context lines advance
+// both counters, add advances only the new counter (old column blank), del
+// advances only the old counter (new column blank). Pure data transform —
+// the GitHunk JSON contract is unchanged.
+function computeLineNumbers(hunk: GitHunk): Array<{ oldNo: number | null; newNo: number | null }> {
+  const result: Array<{ oldNo: number | null; newNo: number | null }> = []
+  let oldNo = hunk.old_start
+  let newNo = hunk.new_start
+  for (const l of hunk.lines) {
+    if (l.type === 'context') {
+      result.push({ oldNo, newNo })
+      oldNo++
+      newNo++
+    } else if (l.type === 'add') {
+      result.push({ oldNo: null, newNo })
+      newNo++
+    } else {
+      result.push({ oldNo, newNo: null })
+      oldNo++
+    }
+  }
+  return result
+}
+
+// gutterWidthStyle returns the per-hunk `--gutter-old-w` / `--gutter-new-w`
+// CSS custom properties driving both the grid column widths and the sticky
+// `left` offsets in wrap-off mode. Width is `max(digits, 2) + 1ch` — digits
+// of the largest number shown in that column plus 1ch of cell padding (the
+// `.diff-gutter` rule applies 0.5ch on each side), floored at 3ch so an
+// all-add or all-del hunk's blank column does not collapse.
+function gutterWidthStyle(
+  lineNumbers: Array<{ oldNo: number | null; newNo: number | null }>,
+): CSSProperties {
+  let maxOld = 0
+  let maxNew = 0
+  for (const { oldNo, newNo } of lineNumbers) {
+    if (oldNo !== null && oldNo > maxOld) maxOld = oldNo
+    if (newNo !== null && newNo > maxNew) maxNew = newNo
+  }
+  const oldW = Math.max(3, String(maxOld || 1).length + 1)
+  const newW = Math.max(3, String(maxNew || 1).length + 1)
+  return {
+    ['--gutter-old-w' as string]: `${oldW}ch`,
+    ['--gutter-new-w' as string]: `${newW}ch`,
+  }
 }
 
 type HastNode = Root['children'][number]
