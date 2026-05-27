@@ -1,59 +1,60 @@
 import { useCallback, useRef } from 'react'
 import './FileViewerTabs.css'
 
-export type FileViewerTab = 'code' | 'blame'
+export type FileViewerTab = 'preview' | 'code' | 'blame'
 
 interface Props {
+  tabs: FileViewerTab[]
   active: FileViewerTab
   onChange: (next: FileViewerTab) => void
 }
 
-const TABS: FileViewerTab[] = ['code', 'blame']
+const LABELS: Record<FileViewerTab, string> = {
+  preview: 'Preview',
+  code: 'Code',
+  blame: 'Blame',
+}
 
-// FileViewerTabs renders the [Code | Blame] ARIA tablist above the content
-// area of `<FileViewer>` for `kind === 'text'` files only. Selection is
-// reflected to `?view=blame` (or absent) by the caller — this component is
-// pure UI; the URL writeback lives in FileViewer so the routing layer stays
-// declarative.
-//
-// Keyboard interaction follows the standard ARIA tablist pattern: left/right
-// move the active tab, Home/End jump to first/last. The buttons also act as
-// the focusable representation of each tab, so a screen-reader user reads
-// `Code, tab, 1 of 2 selected` naturally.
-export default function FileViewerTabs({ active, onChange }: Props) {
+// FileViewerTabs renders the ARIA tablist above the content area of
+// `<FileViewer>`. The tab set is provided by the caller — text files pass
+// `['code','blame']`, markdown files pass `['preview','code','blame']` — so a
+// single component covers every kind that has a tablist. URL state and tab
+// dispatch live in FileViewer; this component is pure UI.
+export default function FileViewerTabs({ tabs, active, onChange }: Props) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      const i = TABS.indexOf(active)
+      if (tabs.length === 0) return
+      const i = Math.max(0, tabs.indexOf(active))
       let next: number
       switch (e.key) {
         case 'ArrowLeft':
-          next = (i - 1 + TABS.length) % TABS.length
+          next = (i - 1 + tabs.length) % tabs.length
           break
         case 'ArrowRight':
-          next = (i + 1) % TABS.length
+          next = (i + 1) % tabs.length
           break
         case 'Home':
           next = 0
           break
         case 'End':
-          next = TABS.length - 1
+          next = tabs.length - 1
           break
         default:
           return
       }
       e.preventDefault()
-      onChange(TABS[next])
+      onChange(tabs[next])
       // Move focus to the freshly-activated tab so the ARIA contract is met.
       refs.current[next]?.focus()
     },
-    [active, onChange],
+    [tabs, active, onChange],
   )
 
   return (
     <div className="file-viewer-tabs" role="tablist" aria-label="File view" onKeyDown={onKeyDown}>
-      {TABS.map((t, i) => {
+      {tabs.map((t, i) => {
         const selected = t === active
         return (
           <button
@@ -68,7 +69,7 @@ export default function FileViewerTabs({ active, onChange }: Props) {
             className={`file-viewer-tab${selected ? ' is-active' : ''}`}
             onClick={() => onChange(t)}
           >
-            {t === 'code' ? 'Code' : 'Blame'}
+            {LABELS[t]}
           </button>
         )
       })}

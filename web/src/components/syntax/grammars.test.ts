@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extToLanguage } from './grammars'
+import { extToLanguage, lowlight, languages } from './grammars'
 
 // ExtensionsWithTextKind lists every extension that extToLanguage maps to a
 // non-null grammar AND that the server must classify as kind="text". Keep this
@@ -47,5 +47,21 @@ describe('extToLanguage', () => {
         expect(extToLanguage('file' + ext)).not.toBeNull()
       })
     }
+  })
+
+  // The markdown Code tab (introduced by add-markdown-three-tab-view) depends
+  // on `.md` and `.markdown` mapping to the registered `markdown` grammar so
+  // CodeBlock can highlight the source. A future contributor removing the
+  // registration or the extension mapping should see these tests fail.
+  describe('markdown grammar registration', () => {
+    it('maps .md to markdown', () => expect(extToLanguage('README.md')).toBe('markdown'))
+    it('maps .markdown to markdown', () =>
+      expect(extToLanguage('notes.markdown')).toBe('markdown'))
+    it('markdown grammar is in the rehype-highlight languages bundle', () => {
+      expect(Object.keys(languages)).toContain('markdown')
+    })
+    it('markdown grammar is registered on the shared lowlight instance', () => {
+      expect(lowlight.registered('markdown')).toBe(true)
+    })
   })
 })
