@@ -20,6 +20,79 @@
   color: var(--fg-muted);
 }
 
+.commits-filter-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  font-size: 0.9rem;
+}
+
+.commits-filter-path {
+  font-family: var(--font-mono);
+  background: var(--hover);
+  padding: 0 0.35em;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+.commits-filter-clear {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  text-decoration: none;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: transparent;
+}
+.commits-filter-clear:hover {
+  border-color: var(--fg-muted);
+  color: var(--fg);
+}
+
+.commits-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.commits-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--fg);
+}
+.commits-status-pill-dot {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.commits-status-pill.pill-modified .commits-status-pill-dot {
+  color: var(--color-diff-add-fg);
+}
+.commits-status-pill.pill-untracked .commits-status-pill-dot {
+  color: var(--fg-muted);
+}
+
+.commits-untracked-info {
+  color: var(--fg-muted);
+  margin: 0;
+}
+
 .commits-list {
   list-style: none;
   margin: 0;

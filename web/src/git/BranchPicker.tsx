@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api/client'
 import type { GitRefs } from '../api/types'
 import { useGitInfo } from './GitInfoContext'
+import { useGitStatus } from './GitStatusContext'
 import './BranchPicker.css'
 
 // BranchPicker renders a button that opens a dropdown listing branches and
@@ -13,7 +14,8 @@ import './BranchPicker.css'
 // Selecting a ref navigates to /git/commits?ref=<encoded>. The dropdown also
 // exposes "View commits" (current ref) and "Local changes" entries.
 export default function BranchPicker() {
-  const { info, changesCount } = useGitInfo()
+  const { info } = useGitInfo()
+  const { changesCount } = useGitStatus()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const activeRef = params.get('ref')

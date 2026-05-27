@@ -27,6 +27,17 @@ var ErrUnknownRef = errors.New("unknown ref")
 // or index. The caller maps this to the typed `not_found` HTTP error.
 var ErrNotFound = errors.New("not found")
 
+// ErrTooLarge is returned when a file exceeds an inline cap (currently the
+// 5 MiB limit shared with /api/meta and the SPA's INLINE_CAP). The caller maps
+// this to the typed `too_large` HTTP error.
+var ErrTooLarge = errors.New("file too large")
+
+// ErrBlameTimeout is returned when a blame computation exceeds its server-side
+// deadline. The caller maps this to the typed `blame_timeout` HTTP error
+// (HTTP 503), distinct from a generic `internal_error` so the SPA can render
+// the "use the History view instead" fallback.
+var ErrBlameTimeout = errors.New("blame timeout")
+
 // Repo is a small wrapper around *gogit.Repository scoped to one served root.
 // Each request constructs a fresh Repo via Open — there is no caching, as
 // required by the spec (the `.git` gate is re-evaluated every request).

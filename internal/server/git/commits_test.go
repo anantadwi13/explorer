@@ -48,7 +48,7 @@ func commitsFixture(t *testing.T) (*Repo, []string) {
 
 func TestCommits_DefaultHEADReturnsMainNewestFirst(t *testing.T) {
 	r, shas := commitsFixture(t)
-	res, err := r.Commits("", "", 0)
+	res, err := r.Commits("", "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestCommits_DefaultHEADReturnsMainNewestFirst(t *testing.T) {
 
 func TestCommits_ExplicitBranch(t *testing.T) {
 	r, shas := commitsFixture(t)
-	res, err := r.Commits("feature/x", "", 0)
+	res, err := r.Commits("feature/x", "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestCommits_ExplicitBranch(t *testing.T) {
 func TestCommits_TagAsRef(t *testing.T) {
 	r, shas := commitsFixture(t)
 	runGit(t, r.root, "tag", "v1.0.0", shas[1])
-	res, err := r.Commits("v1.0.0", "", 0)
+	res, err := r.Commits("v1.0.0", "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestCommits_TagAsRef(t *testing.T) {
 func TestCommits_CursorExclusive(t *testing.T) {
 	r, shas := commitsFixture(t)
 	// Pass the newest sha as cursor; we should get the older two.
-	res, err := r.Commits("", shas[2], 0)
+	res, err := r.Commits("", shas[2], 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestCommits_CursorExclusive(t *testing.T) {
 
 func TestCommits_UnknownRef(t *testing.T) {
 	r, _ := commitsFixture(t)
-	_, err := r.Commits("nonexistent", "", 0)
+	_, err := r.Commits("nonexistent", "", 0, "")
 	if !errors.Is(err, ErrUnknownRef) {
 		t.Fatalf("expected ErrUnknownRef, got %v", err)
 	}
@@ -137,7 +137,7 @@ func TestCommits_EmptyRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := r.Commits("", "", 0)
+	res, err := r.Commits("", "", 0, "")
 	if err != nil {
 		t.Fatalf("expected no error on empty repo, got %v", err)
 	}
@@ -151,7 +151,7 @@ func TestCommits_EmptyRepo(t *testing.T) {
 
 func TestCommits_LimitClamping(t *testing.T) {
 	r, _ := commitsFixture(t)
-	res, err := r.Commits("feature/x", "", 5000)
+	res, err := r.Commits("feature/x", "", 5000, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestCommits_LimitClamping(t *testing.T) {
 
 func TestCommits_NextCursorSetWhenMoreAvailable(t *testing.T) {
 	r, shas := commitsFixture(t)
-	res, err := r.Commits("feature/x", "", 2)
+	res, err := r.Commits("feature/x", "", 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func TestCommits_NextCursorSetWhenMoreAvailable(t *testing.T) {
 	}
 
 	// Follow up: pass the cursor back, expect the remaining 2 commits.
-	page2, err := r.Commits("feature/x", *res.NextCursor, 0)
+	page2, err := r.Commits("feature/x", *res.NextCursor, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestCommits_NextCursorSetWhenMoreAvailable(t *testing.T) {
 func TestCommits_BranchWithSlashes(t *testing.T) {
 	r, _ := commitsFixture(t)
 	runGit(t, r.root, "branch", "release/v1.0")
-	res, err := r.Commits("release/v1.0", "", 0)
+	res, err := r.Commits("release/v1.0", "", 0, "")
 	if err != nil {
 		t.Fatalf("expected branch with slashes to resolve, got %v", err)
 	}
@@ -220,7 +220,7 @@ func TestCommits_BodySeparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := r.Commits("", "", 0)
+	res, err := r.Commits("", "", 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,5 +229,132 @@ func TestCommits_BodySeparation(t *testing.T) {
 	}
 	if got := res.Commits[0].Body; got == "" || got[:13] != "body line one" {
 		t.Errorf("body should begin with body line one, got %q", got)
+	}
+}
+
+// pathFilterFixture builds a repo where:
+//   - commit 0: adds README.md and src/keep.go.
+//   - commit 1: edits src/keep.go.
+//   - commit 2: renames src/keep.go to src/renamed.go.
+//   - commit 3: edits src/renamed.go.
+//   - commit 4: edits README.md.
+//
+// Returns the five shas in chronological (oldest first) order.
+func pathFilterFixture(t *testing.T) (*Repo, []string) {
+	t.Helper()
+	dir := t.TempDir()
+	initRepo(t, dir)
+
+	var shas []string
+	t1 := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
+
+	writeFile(t, dir, "README.md", "v1")
+	writeFile(t, dir, "src/keep.go", "package keep\n")
+	commitAll(t, dir, "init", t1)
+	shas = append(shas, headSHA(t, dir))
+
+	writeFile(t, dir, "src/keep.go", "package keep\n\n// edit\n")
+	commitAll(t, dir, "edit keep", t1.Add(24*time.Hour))
+	shas = append(shas, headSHA(t, dir))
+
+	t3 := t1.Add(48 * time.Hour)
+	runGitWithTime(t, dir, t3, "mv", "src/keep.go", "src/renamed.go")
+	runGitWithTime(t, dir, t3, "commit", "-m", "rename keep -> renamed")
+	shas = append(shas, headSHA(t, dir))
+
+	writeFile(t, dir, "src/renamed.go", "package keep\n\n// edit after rename\n")
+	commitAll(t, dir, "edit renamed", t1.Add(72*time.Hour))
+	shas = append(shas, headSHA(t, dir))
+
+	writeFile(t, dir, "README.md", "v2")
+	commitAll(t, dir, "readme bump", t1.Add(96*time.Hour))
+	shas = append(shas, headSHA(t, dir))
+
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r, shas
+}
+
+func TestCommits_PathFilter_OnlyTouchingCommits(t *testing.T) {
+	r, shas := pathFilterFixture(t)
+	res, err := r.Commits("", "", 0, "README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// README.md is touched at the init commit (shas[0]) and the bump (shas[4]).
+	if len(res.Commits) != 2 {
+		t.Fatalf("expected 2 commits touching README.md, got %d", len(res.Commits))
+	}
+	if res.Commits[0].SHA != shas[4] || res.Commits[1].SHA != shas[0] {
+		t.Errorf("wrong order/contents: got %s,%s want %s,%s",
+			res.Commits[0].SHA, res.Commits[1].SHA, shas[4], shas[0])
+	}
+	if res.NextCursor != nil {
+		t.Errorf("expected next_cursor nil for full filtered set in one page, got %v", *res.NextCursor)
+	}
+}
+
+func TestCommits_PathFilter_RenameUnderNewPath(t *testing.T) {
+	r, shas := pathFilterFixture(t)
+	res, err := r.Commits("", "", 0, "src/renamed.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The rename commit (To=src/renamed.go) plus the edit after rename. Older
+	// history under the old name is NOT followed (rename boundary).
+	if len(res.Commits) != 2 {
+		t.Fatalf("expected 2 commits touching src/renamed.go, got %d", len(res.Commits))
+	}
+	if res.Commits[0].SHA != shas[3] || res.Commits[1].SHA != shas[2] {
+		t.Errorf("wrong order/contents: got %s,%s want %s,%s",
+			res.Commits[0].SHA, res.Commits[1].SHA, shas[3], shas[2])
+	}
+}
+
+func TestCommits_PathFilter_NonexistentPath(t *testing.T) {
+	r, _ := pathFilterFixture(t)
+	res, err := r.Commits("", "", 0, "does/not/exist.txt")
+	if err != nil {
+		t.Fatalf("nonexistent path should not error, got %v", err)
+	}
+	if len(res.Commits) != 0 {
+		t.Errorf("expected empty list, got %d commits", len(res.Commits))
+	}
+	if res.NextCursor != nil {
+		t.Errorf("expected next_cursor nil on empty filtered result, got %v", *res.NextCursor)
+	}
+}
+
+func TestCommits_PathFilter_PathEscapeCollapses(t *testing.T) {
+	r, _ := pathFilterFixture(t)
+	res, err := r.Commits("", "", 0, "../../etc/passwd")
+	if err != nil {
+		t.Fatalf("path-escape should collapse to empty, got error %v", err)
+	}
+	if len(res.Commits) != 0 {
+		t.Errorf("expected empty list for path-escape attempt, got %d commits", len(res.Commits))
+	}
+}
+
+func TestCommits_PathFilter_WithCursor(t *testing.T) {
+	r, shas := pathFilterFixture(t)
+	// Cursor=shas[4] (newest README commit) — next page should be the init
+	// commit (shas[0]) only, even though shas[1..3] are walked but filtered.
+	res, err := r.Commits("", shas[4], 0, "README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Commits) != 1 {
+		t.Fatalf("expected 1 commit older than cursor touching README.md, got %d", len(res.Commits))
+	}
+	if res.Commits[0].SHA != shas[0] {
+		t.Errorf("expected shas[0]=%s, got %s", shas[0], res.Commits[0].SHA)
+	}
+	for _, c := range res.Commits {
+		if c.SHA == shas[4] {
+			t.Errorf("cursor commit must not appear in the filtered page")
+		}
 	}
 }

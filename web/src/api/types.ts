@@ -30,6 +30,7 @@ export interface ApiError {
     | 'bad_request'
     | 'not_a_repo'
     | 'unknown_ref'
+    | 'blame_timeout'
   message: string
 }
 
@@ -142,3 +143,46 @@ export interface GitPatch {
 }
 
 export type GitPatchSource = 'commit' | 'staged' | 'unstaged'
+
+// --- blame ---
+// Wire shape for /api/git/blame. Distinct from the commits-list summary —
+// blame drops `body` and adds the path/ref/total_lines/dirty top-level
+// fields. Two chunk variants on the wire (committed vs uncommitted) are
+// discriminated by the presence of `commit` vs `uncommitted: true` — the TS
+// types below mirror that union exactly.
+
+export interface BlameCommit {
+  sha: string
+  short_sha: string
+  author_name: string
+  author_email: string
+  author_time: string // RFC 3339
+  subject: string
+}
+
+export interface BlameChunkCommitted {
+  start_line: number
+  line_count: number
+  commit: BlameCommit
+}
+
+export interface BlameChunkUncommitted {
+  start_line: number
+  line_count: number
+  uncommitted: true
+}
+
+export type BlameChunk = BlameChunkCommitted | BlameChunkUncommitted
+
+export interface BlameResponse {
+  path: string
+  ref: string
+  sha: string
+  total_lines: number
+  dirty: boolean
+  chunks: BlameChunk[]
+}
+
+export function isUncommittedChunk(c: BlameChunk): c is BlameChunkUncommitted {
+  return (c as BlameChunkUncommitted).uncommitted === true
+}

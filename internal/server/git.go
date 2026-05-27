@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	gitpkg "github.com/anantadwi13/explorer/internal/server/git"
+	"github.com/anantadwi13/explorer/internal/server/resolver"
 )
 
 // git endpoints open the repo lazily once per request — no startup caching.
@@ -32,6 +33,14 @@ func (s *Server) openRepo(w http.ResponseWriter) (*gitpkg.Repo, bool) {
 
 // writeGitError maps git package errors to typed HTTP responses.
 func writeGitError(w http.ResponseWriter, err error) {
+	// Resolver errors can flow back from the blame endpoint's working-tree
+	// read (the one documented exception where the path-resolver chokepoint
+	// applies inside /api/git/*). They carry their own typed kind already.
+	var re *resolver.ResolveError
+	if errors.As(err, &re) {
+		writeResolveError(w, err)
+		return
+	}
 	switch {
 	case errors.Is(err, gitpkg.ErrNotARepo):
 		writeError(w, errKindNotARepo, "served root is not a git repository", http.StatusNotFound)
@@ -39,6 +48,10 @@ func writeGitError(w http.ResponseWriter, err error) {
 		writeError(w, errKindUnknownRef, "unknown ref", http.StatusNotFound)
 	case errors.Is(err, gitpkg.ErrNotFound):
 		writeError(w, errKindNotFound, "not found", http.StatusNotFound)
+	case errors.Is(err, gitpkg.ErrTooLarge):
+		writeError(w, errKindTooLarge, "file exceeds inline preview size cap", http.StatusRequestEntityTooLarge)
+	case errors.Is(err, gitpkg.ErrBlameTimeout):
+		writeError(w, errKindBlameTimeout, "blame computation exceeded its deadline", http.StatusServiceUnavailable)
 	case errors.Is(err, gitpkg.ErrPatchSourceSHAMismatch):
 		writeError(w, errKindBadRequest, "source/sha argument mismatch", http.StatusBadRequest)
 	default:
@@ -94,6 +107,7 @@ func (s *Server) handleGitCommits(w http.ResponseWriter, req *http.Request) {
 	ref := q.Get("ref")
 	cursor := q.Get("cursor")
 	limit := parseIntDefault(q.Get("limit"), gitpkg.CommitsDefaultLimit)
+	path := q.Get("path")
 
 	// Validate before any go-git call. Malformed inputs collapse to unknown_ref.
 	if ref != "" && !gitpkg.ValidRef(ref) {
@@ -104,8 +118,12 @@ func (s *Server) handleGitCommits(w http.ResponseWriter, req *http.Request) {
 		writeGitError(w, gitpkg.ErrUnknownRef)
 		return
 	}
+	// `path` requires no separate validation — it is a repo-relative pathspec
+	// into the git object tree, not a filesystem path (see git-reader's
+	// "Path semantics declaration" requirement). A syntactically valid but
+	// nonexistent path simply yields an empty filtered result.
 
-	res, err := r.Commits(ref, cursor, limit)
+	res, err := r.Commits(ref, cursor, limit, path)
 	if err != nil {
 		writeGitError(w, err)
 		return
@@ -179,6 +197,30 @@ func (s *Server) handleGitPatch(w http.ResponseWriter, req *http.Request) {
 	hunkLimit := parseIntDefault(q.Get("hunk_limit"), gitpkg.PatchHunksDefaultLimit)
 
 	res, err := r.Patch(source, sha, path, hunkOffset, hunkLimit)
+	if err != nil {
+		writeGitError(w, err)
+		return
+	}
+	writeJSON(w, res)
+}
+
+func (s *Server) handleGitBlame(w http.ResponseWriter, req *http.Request) {
+	r, ok := s.openRepo(w)
+	if !ok {
+		return
+	}
+	q := req.URL.Query()
+	path := q.Get("path")
+	if path == "" {
+		writeError(w, errKindBadRequest, "missing path", http.StatusBadRequest)
+		return
+	}
+	ref := q.Get("ref")
+	if ref != "" && !gitpkg.ValidRef(ref) && !gitpkg.ValidSHA(ref) {
+		writeGitError(w, gitpkg.ErrUnknownRef)
+		return
+	}
+	res, err := r.Blame(s.resolver, path, ref, 0)
 	if err != nil {
 		writeGitError(w, err)
 		return

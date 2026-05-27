@@ -1,0 +1,303 @@
+/* BlameView — per-line authorship paired with the file's working-tree
+   content. Layout switches at the same 768px breakpoint the rest of the
+   SPA uses. Chrome (panel background, borders, text) reads from the
+   documented design tokens; blame intentionally does NOT borrow the
+   diff add/del tints (chunks express commit grouping, not change semantics).
+   The uncommitted treatment is the one exception — it gets its own muted
+   background so a glance is enough to recognise "your local edits". */
+
+.blame-view {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.blame-state {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.blame-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.blame-empty-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  color: var(--fg);
+  text-decoration: none;
+}
+.blame-empty-cta:hover {
+  border-color: var(--fg-muted);
+}
+
+.blame-dirty-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.blame-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--fg);
+}
+.blame-pill-dot {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.blame-pill.pill-modified .blame-pill-dot {
+  color: var(--color-diff-add-fg);
+}
+
+/* "Refetching blame…" pill — shown above cached chunks while the SWR
+   background fetch is in flight. The spinner conveys "this is computing"
+   without claiming the cached chunks are wrong; it disappears the moment
+   the fetch resolves. */
+.blame-pill.pill-refetching {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.blame-pill-spinner {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--fg-muted);
+  border-radius: 50%;
+  animation: blame-spinner 0.8s linear infinite;
+}
+
+@keyframes blame-spinner {
+  to { transform: rotate(360deg); }
+}
+
+.blame-chunks {
+  display: flex;
+  flex-direction: column;
+}
+
+.blame-chunk {
+  display: grid;
+  /* Mobile-first: chunk meta stacks above the line range. The desktop
+     three-column layout is reactivated by the ≥768px media query below. */
+  grid-template-columns: 1fr;
+  border-bottom: 1px solid var(--line);
+}
+.blame-chunk:last-child {
+  border-bottom: none;
+}
+
+/* Uncommitted background spans the entire chunk row (metadata + lines) so
+   the "this is your local edit" treatment is visible end-to-end. The token
+   is themed via the existing light/dark `[data-theme]` pattern, defined in
+   `web/src/styles/syntax.css`. A locally-set fallback keeps the chunk
+   tinted even when the token isn't present (older themes). */
+.blame-chunk-uncommitted {
+  background: var(--blame-uncommitted-bg, color-mix(in srgb, var(--accent) 8%, transparent));
+}
+
+.blame-chunk-meta {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--fg-muted);
+  overflow: hidden;
+}
+
+.blame-chunk-uncommitted .blame-chunk-meta {
+  background: transparent;
+}
+
+.blame-chunk-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.blame-meta-sep {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+}
+.blame-meta-sha {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.blame-meta-sha:hover { text-decoration: underline; }
+.blame-meta-subject {
+  color: var(--fg);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.blame-meta-subject:hover { text-decoration: underline; }
+.blame-meta-author,
+.blame-meta-time {
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.blame-chunk-uncommitted-label {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.blame-chunk-pending-label {
+  color: var(--fg-muted);
+  font-style: italic;
+  /* Slow pulse so the user notices the metadata column is still resolving
+     without it becoming a distraction. The animation reads as "computing"
+     rather than "broken". */
+  animation: blame-pending-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes blame-pending-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+
+.blame-chunk-body {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 6px 0;
+  overflow: hidden;
+  /* `--blame-gutter-w` is set inline per blame view (digit count of
+     total_lines + 1ch padding). Falls back to 4ch so a stripped-down test
+     render still has a sensible gutter. */
+  --blame-gutter-w: 4ch;
+}
+
+.blame-view.wrap-off .blame-chunk-body {
+  overflow-x: auto;
+}
+
+/* The chunk-lines grid is the single positioning context for all lines in
+   the chunk. Sticky-left on each .blame-gutter is therefore relative to
+   the SCROLL container (`.blame-chunk-body`), not to each individual line —
+   without this, scrolling horizontally would slide the gutter off-screen
+   along with the line's bounding box. Each line uses `grid-template-columns:
+   subgrid` so the [gutter | text] tracks line up across rows.
+
+   The trailing `1fr` filler track keeps row tints reaching the right edge
+   when the longest line is shorter than the visible body, matching the
+   DiffHunk pattern. */
+.blame-chunk-lines {
+  display: grid;
+  grid-template-columns: var(--blame-gutter-w) minmax(0, max-content) 1fr;
+}
+
+.blame-view.wrap-off .blame-chunk-lines {
+  width: max-content;
+  min-width: 100%;
+}
+
+.blame-line {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: baseline;
+}
+
+.blame-gutter {
+  text-align: right;
+  user-select: none;
+  color: var(--fg-muted);
+  padding: 0 0.5ch;
+  /* Opaque base so the sticky-left gutter occludes diff text scrolling
+     beneath it in wrap-off mode. Uncommitted chunks override this with a
+     layered background that mixes the amber tint over the opaque base. */
+  background: var(--bg-panel);
+}
+
+.blame-line-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  padding: 0 0.5ch 0 0;
+}
+
+.blame-view.wrap-off .blame-line-text {
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+/* In wrap-off mode, pin the line-number gutter to the left edge of the
+   scrolling chunk body so a horizontally-scrolled long line still shows
+   its number. Sticky is relative to `.blame-chunk-body` (the scrolling
+   ancestor) because the gutter participates in the chunk's single grid
+   via subgrid — not its own per-line grid. */
+.blame-view.wrap-off .blame-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+/* Uncommitted chunks: keep the gutter opaque (so it occludes scrolled
+   text in wrap-off) but layer the amber chunk tint on top via
+   background-image, matching how DiffHunk handles add/del tinted rows. */
+.blame-chunk-uncommitted .blame-gutter {
+  background-color: var(--bg-panel);
+  background-image: linear-gradient(var(--blame-uncommitted-bg), var(--blame-uncommitted-bg));
+}
+
+@media (min-width: 768px) {
+  /* Desktop: three-column layout with the metadata column on the left.
+     `min-content` keeps the metadata's intrinsic width but a max width
+     prevents long subjects from squeezing the code cell. */
+  .blame-chunk {
+    grid-template-columns: minmax(180px, 240px) 1fr;
+  }
+  .blame-chunk-meta {
+    border-bottom: none;
+    border-right: 1px solid var(--line);
+    display: flex;
+    align-items: flex-start;
+  }
+  .blame-chunk-meta-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  /* The separator dots between fields are noisy in the vertical layout —
+     hide them when the row stacks (kept for mobile single-row form). */
+  .blame-chunk-meta-row .blame-meta-sep {
+    display: none;
+  }
+  /* In wrap-off mode, pin the metadata column too so it stays readable
+     when the user scrolls the code cell horizontally. */
+  .blame-view.wrap-off .blame-chunk-meta {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-soft);
+  }
+}

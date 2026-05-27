@@ -13,11 +13,13 @@ import (
 const (
 	errKindInternal = "internal_error"
 	errKindNotFound = "not_found"
+	errKindTooLarge = "too_large"
 
 	// git-reader additions.
-	errKindNotARepo   = "not_a_repo"
-	errKindUnknownRef = "unknown_ref"
-	errKindBadRequest = "bad_request"
+	errKindNotARepo      = "not_a_repo"
+	errKindUnknownRef    = "unknown_ref"
+	errKindBadRequest    = "bad_request"
+	errKindBlameTimeout  = "blame_timeout"
 )
 
 type apiError struct {

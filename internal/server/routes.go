@@ -17,6 +17,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/git/commit", s.handleGitCommit)
 	s.mux.HandleFunc("/api/git/status", s.handleGitStatus)
 	s.mux.HandleFunc("/api/git/patch", s.handleGitPatch)
+	s.mux.HandleFunc("/api/git/blame", s.handleGitBlame)
 
 	s.mux.HandleFunc("/raw/", s.handleRaw)
 	s.mux.HandleFunc("/", s.handleStatic)

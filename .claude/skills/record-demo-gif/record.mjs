@@ -323,7 +323,30 @@ ws.on('open', async () => {
       await moveAndClickButtonText('View commits', '.branch-picker-menu', 500);
       await sleep(1100);
       await moveAndClickSelector('a.commit-subject', 600);
-      await sleep(2200);
+      await sleep(2000);
+
+      // Scene 6: per-file history + blame on a *modified-locally* text file.
+      // Navigate back to /view/ through the persistent sidebar tree (no
+      // keyboard or history.back — every action in the demo is mouse-only
+      // so the recording reads as a clickable product tour). The b/ folder
+      // chevron expands the tree node, then b/new.txt opens — that file is
+      // unstaged in the sample-repo's working tree, so the strip shows the
+      // `Modified locally` pill and the Blame view shows the dirty overlay
+      // with an `uncommitted` chunk for the post-rename edit.
+      await moveAndClickSelector('button[aria-label="Expand b"]', 500);
+      await sleep(500);
+      await moveAndClickSelector('a.tree-row[href$="/view/b/new.txt"]', 600);
+      await sleep(1300);
+      // Code | Blame tablist now sits above the code block; the strip's
+      // "Modified locally" pill is visible on the action row. Click Blame
+      // — BlameView renders with `dirty: true`, the "Modified locally"
+      // status bar, and an `uncommitted: true` chunk for the appended line.
+      await moveAndClickButtonText('Blame', '[role="tablist"]', 450);
+      await sleep(1800);
+      // Drop into the path-filtered commits list via the strip's History
+      // pill — the banner + status row exercise the path-filter UI too.
+      await moveAndClickSelector('a.file-last-commit-history', 500);
+      await sleep(2000);
     } else {
       // ====================================================================
       // MOBILE TIMELINE — 390x720, served against testdata/sample-repo.
@@ -390,7 +413,24 @@ ws.on('open', async () => {
       await moveAndClickButtonText('View commits', '.branch-picker-menu', 500);
       await sleep(1400);
       await moveAndClickSelector('a.commit-subject', 600);
-      await sleep(2200);
+      await sleep(1900);
+
+      // Scene 7: per-file history + blame on mobile, modified-locally case.
+      // Mouse-only navigation: re-open the drawer, expand the `b/` folder,
+      // tap `b/new.txt`. The drawer auto-closes (closeSidebar fires on the
+      // file link); the file viewer renders with the `Modified locally`
+      // pill on the strip's action row and the Code|Blame tablist above the
+      // body. Tapping Blame shows the stacked-metadata layout (chunk meta
+      // above the line range, below the 768 px breakpoint) plus the dirty
+      // overlay with an `uncommitted` chunk for the post-rename edit.
+      await moveAndClickSelector('button[aria-label="Open folders"]', 500);
+      await sleep(700);
+      await moveAndClickSelector('button[aria-label="Expand b"]', 450, { minX: 0 });
+      await sleep(500);
+      await moveAndClickSelector('a.tree-row[href$="/view/b/new.txt"]', 500, { minX: 0 });
+      await sleep(1500);
+      await moveAndClickButtonText('Blame', '[role="tablist"]', 450);
+      await sleep(2000);
     }
 
     stopped = true;

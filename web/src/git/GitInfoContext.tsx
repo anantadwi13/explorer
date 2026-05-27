@@ -1,22 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import * as api from '../api/client'
-import type { GitInfo, GitStatus } from '../api/types'
+import type { GitInfo } from '../api/types'
+import { GitStatusProvider } from './GitStatusContext'
 
-// GitInfoCtx is the top-level cache for /api/git/info (loaded once on SPA
-// mount) and a derived view of the working-tree change count, which is
-// refreshed lazily whenever someone calls `refreshStatus()`. The spec
-// requires the SPA to render git affordances ONLY when `is_repo` is true,
-// so every consumer first checks that field.
+// GitInfoCtx caches the once-per-load /api/git/info response. Working-tree
+// status (staged/unstaged/untracked, changes count, per-path classification)
+// lives in the sibling GitStatusContext so the two fetches can be reasoned
+// about independently. The GitInfoProvider mounts GitStatusProvider as a
+// nested child so callers only wrap with one provider.
 export interface GitInfoCtxValue {
   // null while the initial /api/git/info fetch is in flight.
   info: GitInfo | null
-  // Number of staged + unstaged + untracked entries. -1 means "not yet
-  // loaded"; the ChangesBadge component hides itself until it learns this.
-  changesCount: number
-  // Trigger a re-fetch of /api/git/status. Used by views that mutate the
-  // implied state (e.g. after a hunk fetch reveals the working tree changed
-  // out-of-band) — currently called from a focus listener in the provider.
-  refreshStatus: () => Promise<void>
 }
 
 const GitInfoCtx = createContext<GitInfoCtxValue | null>(null)
@@ -27,9 +21,7 @@ interface ProviderProps {
 
 export function GitInfoProvider({ children }: ProviderProps) {
   const [info, setInfo] = useState<GitInfo | null>(null)
-  const [changesCount, setChangesCount] = useState<number>(-1)
 
-  // Load /api/git/info exactly once on mount.
   useEffect(() => {
     let cancelled = false
     api.getGitInfo().then((res) => {
@@ -42,42 +34,22 @@ export function GitInfoProvider({ children }: ProviderProps) {
     }
   }, [])
 
-  const refreshStatus = useCallback(async () => {
-    if (info && !info.is_repo) return
-    const res = await api.getGitStatus()
-    if (res.ok) {
-      const total = countStatus(res.data)
-      setChangesCount(total)
-    }
-  }, [info])
+  const value = useMemo<GitInfoCtxValue>(() => ({ info }), [info])
 
-  // Once info loads and the served root is a repo, fetch status once so the
-  // ChangesBadge can render with the correct count on first paint.
-  useEffect(() => {
-    if (!info || !info.is_repo) {
-      setChangesCount(0)
-      return
-    }
-    refreshStatus()
-  }, [info, refreshStatus])
-
-  const value = useMemo<GitInfoCtxValue>(() => ({
-    info,
-    changesCount,
-    refreshStatus,
-  }), [info, changesCount, refreshStatus])
-
-  return <GitInfoCtx.Provider value={value}>{children}</GitInfoCtx.Provider>
+  return (
+    <GitInfoCtx.Provider value={value}>
+      <GitStatusProvider>{children}</GitStatusProvider>
+    </GitInfoCtx.Provider>
+  )
 }
 
+// useGitInfo returns the cached /api/git/info response. When invoked outside
+// a <GitInfoProvider> (some tests render components in isolation), it returns
+// a stable `info: null` value rather than throwing — every consumer already
+// has to handle the "fetch in flight" branch where `info` is null anyway, so
+// the missing-provider case routes through the same code path.
 export function useGitInfo(): GitInfoCtxValue {
   const ctx = useContext(GitInfoCtx)
-  if (!ctx) {
-    throw new Error('useGitInfo must be used inside <GitInfoProvider>')
-  }
+  if (!ctx) return { info: null }
   return ctx
-}
-
-function countStatus(s: GitStatus): number {
-  return s.staged.length + s.unstaged.length + s.untracked.length
 }

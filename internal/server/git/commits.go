@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strings"
@@ -49,9 +50,17 @@ type CommitsResult struct {
 //     walk the log from `ref` and start yielding once we have passed the
 //     cursor commit. The cursor commit itself is NOT included.
 //   - `limit` defaults to 30 and is clamped to [1, 100].
+//   - `path`, when non-empty, restricts the returned commits to those whose
+//     first-parent diff touches the path as either an old or new path. The
+//     cursor still names a commit sha (not a filtered-page index); the next
+//     page filters the same `path` against the next walk segment. Path
+//     matching is exact — the walk stops at the first rename boundary for
+//     the requested name (older history under a different name is NOT
+//     followed transparently in v1).
 //
-// Unknown refs and unknown cursors both return ErrUnknownRef.
-func (r *Repo) Commits(ref, cursor string, limit int) (CommitsResult, error) {
+// Unknown refs and unknown cursors both return ErrUnknownRef. A syntactically
+// valid but nonexistent `path` yields zero commits, not an error.
+func (r *Repo) Commits(ref, cursor string, limit int, path string) (CommitsResult, error) {
 	out := CommitsResult{Commits: []CommitSummary{}}
 
 	if limit <= 0 {
@@ -96,6 +105,15 @@ func (r *Repo) Commits(ref, cursor string, limit int) (CommitsResult, error) {
 				skipping = false
 			}
 			continue
+		}
+		if path != "" {
+			touches, err := r.commitTouchesPath(c, path)
+			if err != nil {
+				return out, err
+			}
+			if !touches {
+				continue
+			}
 		}
 		out.Commits = append(out.Commits, summariseCommit(c))
 		if len(out.Commits) >= limit {
@@ -234,3 +252,40 @@ func (r *Repo) resolveSHAPrefix(prefix string) (plumbing.Hash, error) {
 }
 
 var errAmbiguousSHA = errors.New("ambiguous short sha")
+
+// commitTouchesPath reports whether the commit's first-parent diff includes
+// `path` as either an old or new path. Root commits are diffed against an
+// empty tree (so an addition of `path` at the root commit also matches).
+// Rename detection is enabled — a rename commit matches under whichever name
+// (old or new) `path` happens to be. This makes "stop at rename boundary"
+// fall out naturally: older history under a different name does not touch
+// the requested name and is dropped.
+func (r *Repo) commitTouchesPath(c *object.Commit, path string) (bool, error) {
+	currentTree, err := c.Tree()
+	if err != nil {
+		return false, err
+	}
+	var parentTree *object.Tree
+	if c.NumParents() > 0 {
+		parent, err := c.Parent(0)
+		if err != nil {
+			return false, err
+		}
+		parentTree, err = parent.Tree()
+		if err != nil {
+			return false, err
+		}
+	}
+	changes, err := object.DiffTreeWithOptions(context.Background(), parentTree, currentTree, &object.DiffTreeOptions{
+		DetectRenames: true,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, ch := range changes {
+		if ch.From.Name == path || ch.To.Name == path {
+			return true, nil
+		}
+	}
+	return false, nil
+}

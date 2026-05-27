@@ -1,5 +1,6 @@
 import type {
   ApiResult,
+  BlameResponse,
   GitCommit,
   GitCommits,
   GitInfo,
@@ -69,6 +70,7 @@ export interface CommitsParams {
   ref?: string
   cursor?: string
   limit?: number
+  path?: string
 }
 
 export function getGitCommits(params: CommitsParams = {}): Promise<ApiResult<GitCommits>> {
@@ -76,8 +78,21 @@ export function getGitCommits(params: CommitsParams = {}): Promise<ApiResult<Git
   if (params.ref) qs.set('ref', params.ref)
   if (params.cursor) qs.set('cursor', params.cursor)
   if (params.limit) qs.set('limit', String(params.limit))
+  if (params.path) qs.set('path', params.path)
   const query = qs.toString()
   return apiGet<GitCommits>('/api/git/commits' + (query ? '?' + query : ''))
+}
+
+export interface BlameParams {
+  path: string
+  ref?: string
+}
+
+export function getGitBlame(params: BlameParams): Promise<ApiResult<BlameResponse>> {
+  const qs = new URLSearchParams()
+  qs.set('path', params.path)
+  if (params.ref) qs.set('ref', params.ref)
+  return apiGet<BlameResponse>('/api/git/blame?' + qs.toString())
 }
 
 export interface CommitParams {
