@@ -13,11 +13,11 @@
 A single-binary local directory browser — point it at a folder, open the URL, read everything in place from your phone on the same Wi-Fi.
 
 <p align="center">
-  <img src="docs/desktop.gif" alt="explorer on the desktop: browse a git repo, open a markdown file, switch to dark theme, preview a binary, and drill into a commit diff" width="820"/>
+  <img src="docs/desktop.gif" alt="explorer on the desktop: browse a git repo, open a markdown file, switch to dark theme, preview a binary, drill into a commit diff, and inspect per-file blame from the file viewer" width="820"/>
 </p>
 
 <p align="center">
-  <img src="docs/mobile.gif" alt="explorer on mobile: open a markdown file, scroll, browse the tree, and jump to the commits list via the branch picker" width="320"/>
+  <img src="docs/mobile.gif" alt="explorer on mobile: open a markdown file, scroll, browse the tree, jump to the commits list via the branch picker, and switch a text file to its blame view" width="320"/>
 </p>
 
 ## Why explorer?
@@ -181,7 +181,7 @@ explorer serving /home/alice/docs
 - Deep-linkable URLs for every folder and file
 - Light / dark / system theme toggle
 - Single static binary — no runtime dependencies
-- **Git browsing** when the served root is a git repository: commit history, branch/tag picker, per-commit diffs (lazy hunk loading), and working-tree status
+- **Git browsing** when the served root is a git repository: commit history, branch/tag picker, per-commit diffs (lazy hunk loading), working-tree status, per-file history, and line-by-line blame
 
 ## Git browsing
 
@@ -191,6 +191,9 @@ When `explorer` is pointed at a directory whose top level contains a `.git` entr
 - **Commits list** at `/git/commits` (or `/git/commits?ref=<branch-or-tag>`) — paginated by cursor, newest first.
 - **Commit detail** at `/git/commits/<sha>` — header, parents, file list (paginated 50 at a time), per-file diffs lazily loaded in 3-hunk batches.
 - **Working-tree status** at `/git/status` — staged / unstaged / untracked files; first three diffs auto-expand.
+- **Per-file last-commit strip** above every file viewer when the served root is a repo — `short_sha · subject · author · time`, with a `Modified locally` pill when the file is dirty, an `Untracked` pill when it isn't tracked, and a `History` link to the path-filtered commits list.
+- **Code | Blame tabs** on text files — switch the file view to `?view=blame` to see per-line authorship grouped into commit chunks. Locally-modified lines are marked as `Working tree · uncommitted` and styled distinctly so the dirty overlay is unambiguous.
+- **Path-filtered commits** at `/git/commits?path=<file>` — sticky banner naming the filter with a `[× clear]` affordance; the same `Modified locally` / `Untracked` pill from the file viewer appears as a status row.
 
 The capability is **strictly gated** on a `.git` entry at the served root itself — ancestor `.git` directories are not walked. When the gate is not satisfied, every `/api/git/*` endpoint returns `not_a_repo` and the SPA hides all git affordances, so users of non-repo directories see exactly no change.
 

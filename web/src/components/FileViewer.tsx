@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api/client'
 import { INLINE_CAP } from '../api/client'
 import type { MetaResponse, ApiError, TreeEntry } from '../api/types'
@@ -8,6 +8,9 @@ import { useWrap } from '../hooks/useWrap'
 import { iconForFile } from './iconForFile'
 import MarkdownRenderer from './MarkdownRenderer'
 import CodeBlock from './CodeBlock'
+import FileLastCommitStrip from '../git/FileLastCommitStrip'
+import BlameView from '../git/BlameView'
+import FileViewerTabs, { type FileViewerTab } from './FileViewerTabs'
 import { extToLanguage } from './syntax/grammars'
 import { formatSize, formatDate } from './format'
 import { BackIcon, LinkIcon, DownloadIcon, WrapIcon } from './icons'
@@ -55,6 +58,17 @@ export default function FileViewer({ path }: Props) {
   const navigate = useNavigate()
   const { showToast } = useLayout()
   const [wrap, setWrap] = useWrap()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // The active tab is derived from `?view=blame` on the existing route. Any
+  // other value (or absence) resolves to Code, which is also the natural
+  // resting state for a stale deep link to a non-text file.
+  const activeTab: FileViewerTab = searchParams.get('view') === 'blame' ? 'blame' : 'code'
+  const onTabChange = (next: FileViewerTab) => {
+    const updated = new URLSearchParams(searchParams)
+    if (next === 'blame') updated.set('view', 'blame')
+    else updated.delete('view')
+    setSearchParams(updated, { replace: false })
+  }
 
   // Loading: waiting on meta, or — for text/markdown — also on the /raw/ content fetch.
   // Image and non-previewable kinds need only meta.
@@ -155,6 +169,7 @@ export default function FileViewer({ path }: Props) {
           onCopyLink={onCopyLink}
           showDownload={canDownload(error.error)}
         />
+        <FileLastCommitStrip path={path} />
         <ErrorBody error={error} filename={filename} path={path} />
       </div>
     )
@@ -182,12 +197,19 @@ export default function FileViewer({ path }: Props) {
             : undefined
         }
       />
+      <FileLastCommitStrip path={path} />
+      {meta.kind === 'text' && (
+        <FileViewerTabs active={activeTab} onChange={onTabChange} />
+      )}
       <div className={`vw vw-${meta.kind}`}>
         {meta.kind === 'markdown' && (
           <MarkdownRenderer content={content!} currentPath={path} />
         )}
-        {meta.kind === 'text' && (
+        {meta.kind === 'text' && activeTab === 'code' && (
           <CodeBlock code={content!} language={extToLanguage(path)} wrap={wrap} />
+        )}
+        {meta.kind === 'text' && activeTab === 'blame' && (
+          <BlameView path={path} wrap={wrap} />
         )}
         {meta.kind === 'image' && (
           <img src={`/raw/${path}`} alt={filename} />

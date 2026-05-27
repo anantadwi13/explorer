@@ -107,4 +107,85 @@ describe('CommitsListPage', () => {
     )
     expect(sawRef).toBe(true)
   })
+
+  it('renders the path-filter banner when ?path= is present', async () => {
+    vi.mocked(api.getGitCommits).mockResolvedValue({
+      ok: true,
+      data: {
+        commits: [
+          { sha: 'a'.repeat(40), short_sha: 'aaaaaaa', author_name: 'Alice', author_email: 'a@x', author_time: new Date().toISOString(), subject: 'touch x', body: '' },
+        ],
+        next_cursor: null,
+      },
+    })
+    renderPage('/git/commits?path=internal%2Fserver%2Fapi.go')
+    await screen.findByText('touch x')
+    expect(screen.getByText(/Commits affecting/)).toBeInTheDocument()
+    expect(screen.getByText('internal/server/api.go')).toBeInTheDocument()
+    const clear = screen.getByRole('link', { name: /clear path filter/i })
+    expect(clear.getAttribute('href')).toBe('/git/commits')
+  })
+
+  it('clear-filter link preserves ?ref=', async () => {
+    vi.mocked(api.getGitCommits).mockResolvedValue({
+      ok: true,
+      data: { commits: [], next_cursor: null },
+    })
+    renderPage('/git/commits?path=a.go&ref=feature%2Fx')
+    await screen.findByText(/Commits affecting/)
+    const clear = screen.getByRole('link', { name: /clear path filter/i })
+    expect(clear.getAttribute('href')).toBe('/git/commits?ref=feature%2Fx')
+  })
+
+  it('renders the Modified locally pill when status reports unstaged', async () => {
+    vi.mocked(api.getGitStatus).mockResolvedValue({
+      ok: true,
+      data: {
+        staged: [],
+        unstaged: [{ status: 'M', old_path: 'src/x.go', new_path: 'src/x.go', additions: 1, deletions: 0, is_binary: false }],
+        untracked: [],
+      },
+    })
+    vi.mocked(api.getGitCommits).mockResolvedValue({
+      ok: true,
+      data: {
+        commits: [
+          { sha: 'a'.repeat(40), short_sha: 'aaaaaaa', author_name: 'Alice', author_email: 'a@x', author_time: new Date().toISOString(), subject: 'touch x', body: '' },
+        ],
+        next_cursor: null,
+      },
+    })
+    renderPage('/git/commits?path=src%2Fx.go')
+    await screen.findByText('Modified locally')
+    // Commit list still renders below the status row.
+    expect(screen.getByText('touch x')).toBeInTheDocument()
+  })
+
+  it('renders the Untracked pill + info line + zero-commit body', async () => {
+    vi.mocked(api.getGitStatus).mockResolvedValue({
+      ok: true,
+      data: { staged: [], unstaged: [], untracked: [{ path: 'notes.md' }] },
+    })
+    vi.mocked(api.getGitCommits).mockResolvedValue({
+      ok: true,
+      data: { commits: [], next_cursor: null },
+    })
+    renderPage('/git/commits?path=notes.md')
+    await screen.findByText('Untracked')
+    expect(screen.getByText(/not yet tracked by git/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Load older/i)).toBeNull()
+  })
+
+  it('renders the empty-state when filtered list is empty on a tracked file', async () => {
+    vi.mocked(api.getGitStatus).mockResolvedValue({
+      ok: true,
+      data: { staged: [], unstaged: [], untracked: [] },
+    })
+    vi.mocked(api.getGitCommits).mockResolvedValue({
+      ok: true,
+      data: { commits: [], next_cursor: null },
+    })
+    renderPage('/git/commits?path=lib%2Funused.go')
+    await screen.findByText(/No commits have touched/i)
+  })
 })
