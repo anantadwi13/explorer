@@ -20,6 +20,30 @@ interface Props {
   path: string
 }
 
+// The tablist's available tabs are derived from the file's preview kind.
+// The FIRST entry is the kind's natural default — used by the URL parser
+// when `?view=` is absent, unknown, or incompatible with the kind. Image
+// and non-previewable kinds return an empty array (no tablist renders).
+function tabsForKind(kind: MetaResponse['kind'] | undefined): FileViewerTab[] {
+  if (kind === 'markdown') return ['preview', 'code', 'blame']
+  if (kind === 'text') return ['code', 'blame']
+  return []
+}
+
+// Container class for the content area. Keyed on the active renderer so the
+// markdown Code/Blame tabs reuse the same `.vw-text` panel chrome that text
+// files have always had. Markdown Preview and the unknown-kind fallback stay
+// bare so the existing surfaces don't change.
+function rendererClass(
+  kind: MetaResponse['kind'] | undefined,
+  activeTab: FileViewerTab | undefined,
+): string {
+  if (kind === 'image') return 'vw-image'
+  if (activeTab === 'code' || activeTab === 'blame') return 'vw-text'
+  if (kind === 'markdown') return 'vw-markdown'
+  return ''
+}
+
 // navigator.clipboard requires a secure context (HTTPS or localhost). When the
 // explorer is reached from another device over plain HTTP it is undefined, so
 // fall back to a hidden textarea + execCommand('copy').
@@ -59,18 +83,24 @@ export default function FileViewer({ path }: Props) {
   const { showToast } = useLayout()
   const [wrap, setWrap] = useWrap()
   const [searchParams, setSearchParams] = useSearchParams()
-  // The active tab is derived from `?view=blame` on the existing route. Any
-  // other value (or absence) resolves to Code, which is also the natural
-  // resting state for a stale deep link to a non-text file.
-  const activeTab: FileViewerTab = searchParams.get('view') === 'blame' ? 'blame' : 'code'
+  // The tab set is derived from the file's kind. First entry is the default.
+  // Image and non-previewable files return an empty array (no tablist).
+  const tabs = tabsForKind(meta?.kind)
+  // Parse `?view=` tolerantly: absent / unknown / kind-incompatible values
+  // fall back to the kind's natural default. The URL is left as the user
+  // typed it — generation-strict, parse-tolerant.
+  const requestedView = searchParams.get('view')
+  const activeTab: FileViewerTab | undefined =
+    tabs.length === 0
+      ? undefined
+      : tabs.find((t) => t === requestedView) ?? tabs[0]
   const onTabChange = (next: FileViewerTab) => {
     const updated = new URLSearchParams(searchParams)
-    if (next === 'blame') updated.set('view', 'blame')
-    else updated.delete('view')
-    // `replace: true` so a Code ↔ Blame swap doesn't pile up history
-    // entries. The URL still carries `?view=blame` (so deep links and
-    // share-as-URL both work), but pressing Back skips past tab toggles
-    // and goes to wherever the user actually came from.
+    // Always emit an explicit `?view=` on outbound writes. Even when activating
+    // the kind's default tab, we leave the parameter in place so links the SPA
+    // generates are unambiguous.
+    updated.set('view', next)
+    // `replace: true` so tab swaps don't pile up history entries.
     setSearchParams(updated, { replace: true })
   }
 
@@ -181,7 +211,10 @@ export default function FileViewer({ path }: Props) {
 
   if (!meta) return null
 
-  const showWrapToggle = meta.kind === 'text'
+  // Wrap toggle follows the active tab, not the file kind: visible when
+  // the active tab is Code or Blame; hidden for Preview, Image, and error
+  // states (where activeTab is undefined).
+  const showWrapToggle = activeTab === 'code' || activeTab === 'blame'
 
   return (
     <div className="file-detail">
@@ -202,12 +235,23 @@ export default function FileViewer({ path }: Props) {
         }
       />
       <FileLastCommitStrip path={path} />
-      {meta.kind === 'text' && (
-        <FileViewerTabs active={activeTab} onChange={onTabChange} />
+      {tabs.length > 0 && activeTab && (
+        <FileViewerTabs tabs={tabs} active={activeTab} onChange={onTabChange} />
       )}
-      <div className={`vw vw-${meta.kind}`}>
-        {meta.kind === 'markdown' && (
+      {/* Container class follows the active renderer rather than the file kind
+          so markdown's Code and Blame tabs get the same panel chrome that
+          text files have always had (background, border, rounded corners).
+          Markdown Preview brings its own `.md-body` chrome and intentionally
+          stays bare here. */}
+      <div className={`vw ${rendererClass(meta.kind, activeTab)}`}>
+        {meta.kind === 'markdown' && activeTab === 'preview' && (
           <MarkdownRenderer content={content!} currentPath={path} />
+        )}
+        {meta.kind === 'markdown' && activeTab === 'code' && (
+          <CodeBlock code={content!} language={extToLanguage(path)} wrap={wrap} />
+        )}
+        {meta.kind === 'markdown' && activeTab === 'blame' && (
+          <BlameView path={path} wrap={wrap} />
         )}
         {meta.kind === 'text' && activeTab === 'code' && (
           <CodeBlock code={content!} language={extToLanguage(path)} wrap={wrap} />

@@ -296,9 +296,22 @@ ws.on('open', async () => {
       await desktopDismissTap;
       await sleep(600);
 
-      // Scene 2: open README.md from the main folder listing
+      // Scene 2: open README.md from the main folder listing — the markdown
+      //          three-tab tablist (Preview / Code / Blame) is the headline
+      //          feature of add-markdown-three-tab-view, so dwell on each.
       await moveAndClickSelector('a.row[href$="/view/README.md"]', 700);
       await sleep(1100);
+      // Click Code → markdown source renders inside <CodeBlock> with the
+      // registered markdown grammar (headings, fences, emphasis tokenised).
+      await moveAndClickButtonText('Code', '[role="tablist"]', 450);
+      await sleep(1500);
+      // Click Blame → BlameView renders attribution for each markdown line.
+      await moveAndClickButtonText('Blame', '[role="tablist"]', 450);
+      await sleep(1700);
+      // Back to Preview so the subsequent scroll scene reads against the
+      // rendered markdown body (the original demo flow).
+      await moveAndClickButtonText('Preview', '[role="tablist"]', 450);
+      await sleep(900);
 
       // Scene 3: smooth-scroll through the markdown (short doc — few iters)
       await moveCursor(640, 380, 500);
@@ -378,9 +391,19 @@ ws.on('open', async () => {
       await mobileDismissTap;
       await sleep(600);
 
-      // Scene 2: open README.md from the main listing
+      // Scene 2: open README.md from the main listing — exercise the new
+      //          markdown three-tab tablist (Preview / Code / Blame).
       await moveAndClickSelector('a.row[href$="/view/README.md"]', 600);
       await sleep(1300);
+      // Tap Code → markdown source with syntax highlighting.
+      await moveAndClickButtonText('Code', '[role="tablist"]', 450);
+      await sleep(1500);
+      // Tap Blame → per-line attribution rendered in the mobile stacked layout.
+      await moveAndClickButtonText('Blame', '[role="tablist"]', 450);
+      await sleep(1800);
+      // Back to Preview so the scroll scene reads against the rendered body.
+      await moveAndClickButtonText('Preview', '[role="tablist"]', 450);
+      await sleep(900);
 
       // Scene 3: scroll the markdown, then snap back so the header is visible
       await moveCursor(195, 500, 500);

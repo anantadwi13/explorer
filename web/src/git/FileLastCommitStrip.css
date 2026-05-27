@@ -87,11 +87,13 @@
   text-decoration: underline;
 }
 
-/* The subject is the only variable-width field and the only one that gets
-   truncated when the strip is narrower than its content. The rest of the
-   metadata (sha, author, time) stays visible per Decision 12. */
+/* The subject is the primary content — it gets semi-bold weight for visual
+   hierarchy and is the first field to be ellipsized when the strip narrows.
+   Author name is capped and allowed to shrink so a long name can't crowd
+   the subject to near-zero width. Time stays fixed (it's always short). */
 .file-last-commit-subject {
   color: var(--fg);
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
   overflow: hidden;
@@ -103,10 +105,20 @@
   text-decoration: underline;
 }
 
-.file-last-commit-author,
+.file-last-commit-author {
+  color: var(--fg-muted);
+  font-size: 0.9em;
+  flex: 0 1 auto;   /* can shrink when space is tight */
+  min-width: 0;     /* allows shrinking below intrinsic content width */
+  max-width: 20ch;  /* cap: long names truncate rather than crowd the subject */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .file-last-commit-time {
   color: var(--fg-muted);
-  flex-shrink: 0;
+  flex-shrink: 0;   /* always visible; relative times are typically short */
   white-space: nowrap;
 }
 

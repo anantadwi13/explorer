@@ -1,16 +1,42 @@
-import { act, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRef } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { ApiResult, MetaResponse } from '../api/types'
 import { LayoutContext } from './LayoutContext'
 import FileViewer from './FileViewer'
 
 // Stub out the API client so the component never makes real network calls.
+// `meta` is exercised directly by FileViewer; the others are hit by the
+// child surfaces (FileLastCommitStrip, BlameView) that FileViewer mounts and
+// need a benign default so the component tree settles during render.
 const metaMock = vi.fn<(path: string) => Promise<ApiResult<MetaResponse>>>()
 vi.mock('../api/client', () => ({
   INLINE_CAP: 5 * 1024 * 1024,
   meta: (path: string) => metaMock(path),
+  getGitInfo: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { is_repo: false },
+  }),
+  getGitStatus: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { staged: [], unstaged: [], untracked: [] },
+  }),
+  getGitCommits: vi.fn().mockResolvedValue({
+    ok: true,
+    data: { commits: [], next_cursor: null },
+  }),
+  getGitBlame: vi.fn().mockResolvedValue({
+    ok: true,
+    data: {
+      path: '',
+      ref: '',
+      sha: '',
+      total_lines: 0,
+      dirty: false,
+      chunks: [],
+    },
+  }),
 }))
 
 // Stub global fetch (used for the /raw/ body of text/markdown files).
@@ -31,7 +57,10 @@ afterEach(() => {
   else delete (document as unknown as { execCommand?: unknown }).execCommand
 })
 
-function renderViewer(path: string, opts: { showToast?: (msg: string) => void } = {}) {
+function renderViewer(
+  path: string,
+  opts: { showToast?: (msg: string) => void; initialUrl?: string } = {},
+) {
   const layoutValue = {
     search: '',
     setSearch: () => {},
@@ -40,10 +69,18 @@ function renderViewer(path: string, opts: { showToast?: (msg: string) => void } 
     showToast: opts.showToast ?? (() => {}),
     closeSidebar: () => {},
   }
+  // A tiny probe that reflects the current URL into a data attribute so tests
+  // can assert what the SPA wrote to the address bar after tab activations.
+  const url = opts.initialUrl ?? `/view/${path}`
+  function LocationProbe() {
+    const loc = useLocation()
+    return <div data-testid="location" data-search={loc.search} />
+  }
   return render(
-    <MemoryRouter initialEntries={[`/view/${path}`]}>
+    <MemoryRouter initialEntries={[url]}>
       <LayoutContext.Provider value={layoutValue}>
         <FileViewer path={path} />
+        <LocationProbe />
       </LayoutContext.Provider>
     </MemoryRouter>,
   )
@@ -231,6 +268,261 @@ describe('FileViewer copy-link', () => {
 
     expect(exec).toHaveBeenCalledWith('copy')
     expect(toast).toHaveBeenCalledWith('Failed to copy link')
+  })
+})
+
+// The markdown three-tab variant (Preview / Code / Blame) added by
+// add-markdown-three-tab-view. These exercise the tab rendering, URL emit
+// rule (always-explicit `?view=`), tolerant parse, and wrap-toggle visibility
+// keyed on the active tab.
+describe('FileViewer markdown tablist', () => {
+  function markdownMeta(): MetaResponse {
+    return { size: 16, mtime: '', mime: 'text/markdown', kind: 'markdown' }
+  }
+
+  async function waitForTabs(container: HTMLElement) {
+    await waitFor(() => {
+      const tablist = container.querySelector('[role="tablist"]')
+      if (!tablist) throw new Error('tablist not rendered')
+      return tablist
+    })
+  }
+
+  it('renders Preview / Code / Blame tabs for markdown files', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# hello'))
+
+    const { container } = renderViewer('README.md')
+    await waitForTabs(container)
+    const labels = Array.from(container.querySelectorAll('[role="tab"]')).map(
+      (el) => el.textContent,
+    )
+    expect(labels).toEqual(['Preview', 'Code', 'Blame'])
+  })
+
+  it('legacy URL without ?view= defaults to Preview on markdown', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# hi'))
+
+    const { container } = renderViewer('README.md')
+    await waitForTabs(container)
+    const preview = container.querySelector('[role="tab"][aria-selected="true"]')
+    expect(preview?.textContent).toBe('Preview')
+    // Preview branch mounts MarkdownRenderer, identifiable by .md-body.
+    expect(container.querySelector('.md-body')).not.toBeNull()
+  })
+
+  it('deep link ?view=code on markdown activates Code tab and renders CodeBlock', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container } = renderViewer('README.md', { initialUrl: '/view/README.md?view=code' })
+    await waitForTabs(container)
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      'Code',
+    )
+    expect(container.querySelector('pre.code-block')).not.toBeNull()
+    expect(container.querySelector('.md-body')).toBeNull()
+  })
+
+  it('deep link ?view=blame on markdown activates Blame tab', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container } = renderViewer('README.md', { initialUrl: '/view/README.md?view=blame' })
+    await waitForTabs(container)
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      'Blame',
+    )
+    expect(container.querySelector('.md-body')).toBeNull()
+    expect(container.querySelector('pre.code-block')).toBeNull()
+  })
+
+  it('?view=preview on a text file falls back to Code (defensive)', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 5, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hello'))
+
+    const { container } = renderViewer('hello.go', { initialUrl: '/view/hello.go?view=preview' })
+    await waitForTabs(container)
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      'Code',
+    )
+    expect(container.querySelector('pre.code-block')).not.toBeNull()
+  })
+
+  it('activating Code on markdown writes ?view=code explicitly', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container, getByRole, getByTestId } = renderViewer('README.md')
+    await waitForTabs(container)
+    await act(async () => {
+      fireEvent.click(getByRole('tab', { name: 'Code' }))
+    })
+    expect(getByTestId('location').getAttribute('data-search')).toBe('?view=code')
+  })
+
+  it('switching to Preview from Blame writes ?view=preview (does not delete the param)', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container, getByRole, getByTestId } = renderViewer('README.md', {
+      initialUrl: '/view/README.md?view=blame',
+    })
+    await waitForTabs(container)
+    await act(async () => {
+      fireEvent.click(getByRole('tab', { name: 'Preview' }))
+    })
+    expect(getByTestId('location').getAttribute('data-search')).toBe('?view=preview')
+  })
+
+  it('?at=<sha> is ignored on parse and preserved on emit', async () => {
+    metaMock.mockResolvedValue(okMeta(markdownMeta()))
+    fetchMock.mockResolvedValue(rawResponse('# pinned looking'))
+
+    const { container, getByRole, getByTestId } = renderViewer('README.md', {
+      initialUrl: '/view/README.md?view=preview&at=abc1234',
+    })
+    await waitForTabs(container)
+    // Preview is still active, markdown renderer is still rendering the
+    // working-tree bytes (the test's metaMock + fetchMock). The `at=` value
+    // is ignored on parse.
+    expect(container.querySelector('.md-body')).not.toBeNull()
+    // On a tab activation, the SPA writes the new `view=` but preserves the
+    // pre-existing `at=` parameter (tolerant parse, generation-explicit only
+    // for params the SPA owns).
+    await act(async () => {
+      fireEvent.click(getByRole('tab', { name: 'Code' }))
+    })
+    expect(getByTestId('location').getAttribute('data-search')).toBe(
+      '?view=code&at=abc1234',
+    )
+  })
+})
+
+// Wrap toggle visibility — relocated from `kind === 'text'` to a rule keyed
+// on the active tab. The toggle should be visible on Code or Blame (any kind);
+// hidden on Preview (markdown) and on Image / non-previewable / error states.
+describe('FileViewer wrap toggle visibility per active tab', () => {
+  it('hides the toggle on markdown Preview', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 10, mtime: '', mime: 'text/markdown', kind: 'markdown' }))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container } = renderViewer('README.md')
+    await waitFor(() => {
+      const t = container.querySelector('[role="tablist"]')
+      if (!t) throw new Error('tablist not rendered')
+    })
+    expect(container.querySelector('button[aria-label^="Wrap lines"]')).toBeNull()
+  })
+
+  it('shows the toggle on markdown Code', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 10, mtime: '', mime: 'text/markdown', kind: 'markdown' }))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container } = renderViewer('README.md', { initialUrl: '/view/README.md?view=code' })
+    await waitFor(() => {
+      const btn = container.querySelector('button[aria-label^="Wrap lines"]')
+      if (!btn) throw new Error('wrap toggle not yet rendered')
+    })
+    expect(container.querySelector('button[aria-label^="Wrap lines"]')).not.toBeNull()
+  })
+
+  it('shows the toggle on markdown Blame', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 10, mtime: '', mime: 'text/markdown', kind: 'markdown' }))
+    fetchMock.mockResolvedValue(rawResponse('# title'))
+
+    const { container } = renderViewer('README.md', { initialUrl: '/view/README.md?view=blame' })
+    await waitFor(() => {
+      const btn = container.querySelector('button[aria-label^="Wrap lines"]')
+      if (!btn) throw new Error('wrap toggle not yet rendered')
+    })
+    expect(container.querySelector('button[aria-label^="Wrap lines"]')).not.toBeNull()
+  })
+
+  it('shows the toggle on text Code (default tab)', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 5, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hi'))
+
+    const { container } = renderViewer('hello.go')
+    await waitFor(() => {
+      const btn = container.querySelector('button[aria-label^="Wrap lines"]')
+      if (!btn) throw new Error('wrap toggle not yet rendered')
+    })
+    expect(container.querySelector('button[aria-label^="Wrap lines"]')).not.toBeNull()
+  })
+
+  it('shows the toggle on text Blame', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 5, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hi'))
+
+    const { container } = renderViewer('hello.go', { initialUrl: '/view/hello.go?view=blame' })
+    await waitFor(() => {
+      const btn = container.querySelector('button[aria-label^="Wrap lines"]')
+      if (!btn) throw new Error('wrap toggle not yet rendered')
+    })
+    expect(container.querySelector('button[aria-label^="Wrap lines"]')).not.toBeNull()
+  })
+})
+
+// The content-area container's class follows the active renderer rather than
+// the file kind, so markdown Code and Blame inherit the same panel chrome
+// (vw-text: bg-panel, border, radius-lg) text files have always had.
+describe('FileViewer content-area container class', () => {
+  it('text Code uses vw-text', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 5, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hi'))
+
+    const { container } = renderViewer('hello.go')
+    await waitFor(() => {
+      if (!container.querySelector('pre.code-block')) throw new Error('not ready')
+    })
+    expect(container.querySelector('.vw.vw-text')).not.toBeNull()
+  })
+
+  it('markdown Preview uses vw-markdown (not vw-text)', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 10, mtime: '', mime: 'text/markdown', kind: 'markdown' }))
+    fetchMock.mockResolvedValue(rawResponse('# hi'))
+
+    const { container } = renderViewer('README.md')
+    await waitFor(() => {
+      if (!container.querySelector('.md-body')) throw new Error('not ready')
+    })
+    expect(container.querySelector('.vw.vw-markdown')).not.toBeNull()
+    expect(container.querySelector('.vw.vw-text')).toBeNull()
+  })
+
+  it('markdown Code reuses vw-text (matching text Code)', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 10, mtime: '', mime: 'text/markdown', kind: 'markdown' }))
+    fetchMock.mockResolvedValue(rawResponse('# hi'))
+
+    const { container } = renderViewer('README.md', { initialUrl: '/view/README.md?view=code' })
+    await waitFor(() => {
+      if (!container.querySelector('pre.code-block')) throw new Error('not ready')
+    })
+    expect(container.querySelector('.vw.vw-text')).not.toBeNull()
+    expect(container.querySelector('.vw.vw-markdown')).toBeNull()
+  })
+
+  it('markdown Blame reuses vw-text', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 10, mtime: '', mime: 'text/markdown', kind: 'markdown' }))
+    fetchMock.mockResolvedValue(rawResponse('# hi'))
+
+    const { container } = renderViewer('README.md', { initialUrl: '/view/README.md?view=blame' })
+    await waitFor(() => {
+      if (!container.querySelector('[role="tablist"]')) throw new Error('not ready')
+    })
+    expect(container.querySelector('.vw.vw-text')).not.toBeNull()
+  })
+
+  it('image uses vw-image', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 100, mtime: '', mime: 'image/png', kind: 'image' }))
+
+    const { container } = renderViewer('logo.png')
+    await waitFor(() => {
+      if (!container.querySelector('img')) throw new Error('not ready')
+    })
+    expect(container.querySelector('.vw.vw-image')).not.toBeNull()
   })
 })
 
