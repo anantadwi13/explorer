@@ -3,9 +3,7 @@
 ## Purpose
 
 Everything the React + Vite SPA does — URL routing (`/` and `/view/*` for folder vs file views), responsive layout (split tree+viewer at ≥800px, single-pane below), theme handling, design tokens, keyboard shortcuts, and the file-rendering pipelines for markdown, text (with syntax highlighting), images, and non-previewable fallbacks. The SPA is served as an embedded `embed.FS` bundle by the binary defined in `cli`, fetches data from `http-api`, and follows the URL conventions documented here. The `git-reader` capability layers additional `/git/*` surfaces on top of the same shell.
-
 ## Requirements
-
 ### Requirement: SPA folder URL renders folder listing
 
 A request to `GET /` or `GET /view/<path>/` (folder URL) SHALL serve the SPA shell. The SPA SHALL fetch `/api/tree?path=<path>` for that folder and render a folder listing view. The view SHALL show breadcrumbs (within the main toolbar) whose segments link to ancestor folder URLs, the directory's direct children sorted folders-first then case-insensitive alphabetical by default, and an indication of empty folders.
@@ -633,51 +631,78 @@ Every folder and every file under the served root SHALL be addressable by a stab
 
 ### Requirement: File reader wrap toggle
 
-The SPA file viewer SHALL expose a wrap toggle when previewing a `text` (code) file. The toggle controls whether long lines wrap to fit the viewport (wrap on) or extend to their natural width and become horizontally scrollable inside the code block (wrap off). The toggle SHALL NOT appear for `markdown`, `image`, non-previewable, or error states; markdown fenced code blocks SHALL retain their existing wrap behavior and SHALL NOT be affected by the toggle.
+The SPA file viewer SHALL expose a wrap toggle whose visibility depends on the **active tab** in the file viewer's tablist (see `git-reader` capability, "Code and Blame tabs in the file viewer"):
 
-The default state SHALL be wrap **on**, matching prior behavior. The user's choice SHALL persist in `localStorage` under the key `explorer.wrap` with values `"on"` or `"off"`; an absent or unrecognized value SHALL be treated as `"on"`. The persisted value SHALL apply across page reloads, navigation between text files, and the layout split-vs-stacked breakpoint.
+- When the active tab is `code` or `blame`, the wrap toggle SHALL be rendered in the file viewer's header actions area.
+- When the active tab is `preview` (markdown only), the wrap toggle SHALL NOT be rendered.
+- When the file viewer renders a kind with no tablist (`image`, non-previewable, or error state), the wrap toggle SHALL NOT be rendered.
+
+The toggle controls whether long lines wrap to fit the viewport (wrap on) or extend to their natural width and become horizontally scrollable inside the code block (wrap off). Markdown fenced code blocks rendered inside the Preview tab SHALL retain their existing wrap behavior and SHALL NOT be affected by the toggle.
+
+The default state SHALL be wrap **on**, matching prior behavior. The user's choice SHALL persist in `localStorage` under the key `explorer.wrap` with values `"on"` or `"off"`; an absent or unrecognized value SHALL be treated as `"on"`. The persisted value SHALL apply across page reloads, navigation between files, the layout split-vs-stacked breakpoint, and tab switches between Code and Blame.
 
 The toggle SHALL be a single icon button with a 32×32 px visible footprint at all viewport widths, sized identically to the existing Copy-link icon button (matching the project's shared `.icon-btn` shape). On viewports `< 800px` the toggle SHALL NOT render any text label. Its current state SHALL be exposed assistively via `aria-pressed` (true when wrap is on — the button represents an active wrap-lines action and is "engaged" while wrap is enabled), and a descriptive `aria-label` and `title` SHALL be provided ("Wrap lines: on" / "Wrap lines: off" or equivalent).
 
 When wrap is **off**, the standalone code block SHALL render with `white-space: pre` and a horizontal scrollbar local to the code block (the page itself SHALL NOT scroll horizontally as a result). When wrap is **on**, the code block SHALL render exactly as it does today (`white-space: pre-wrap` with break-on-anywhere word breaks).
 
-#### Scenario: Toggle visible only for text files
+#### Scenario: Toggle visible for text files
 
-- **WHEN** the file viewer renders a file whose `kind` is `text`
+- **WHEN** the file viewer renders a file whose `kind` is `text` (default Code tab active)
 - **THEN** a wrap toggle button is present in the file viewer's header actions area
-- **AND** when the same viewer renders a `markdown`, `image`, non-previewable, or errored file, the wrap toggle is not rendered
+
+#### Scenario: Toggle visible on markdown Code tab
+
+- **WHEN** the file viewer renders a `markdown` file
+- **AND** the user activates the Code tab
+- **THEN** the wrap toggle is present in the file viewer's header actions area
+
+#### Scenario: Toggle visible on markdown Blame tab
+
+- **WHEN** the file viewer renders a `markdown` file
+- **AND** the user activates the Blame tab
+- **THEN** the wrap toggle is present in the file viewer's header actions area
+
+#### Scenario: Toggle hidden on markdown Preview tab
+
+- **WHEN** the file viewer renders a `markdown` file with the Preview tab active (default)
+- **THEN** the wrap toggle is NOT rendered in the file viewer's header actions area
+
+#### Scenario: Toggle hidden on non-tab kinds
+
+- **WHEN** the file viewer renders an `image`, non-previewable, or errored file
+- **THEN** the wrap toggle is NOT rendered
 
 #### Scenario: Default is wrap on
 
-- **WHEN** a user with no prior `explorer.wrap` value in `localStorage` opens any text file
+- **WHEN** a user with no prior `explorer.wrap` value in `localStorage` opens any text or markdown file in a tab where the toggle is visible
 - **THEN** the code block is rendered with lines wrapped to fit the viewport
 - **AND** the toggle's `aria-pressed` is `true`
 
 #### Scenario: Toggling switches wrap mode
 
-- **WHEN** the user clicks the wrap toggle while viewing a text file in wrap-on state
+- **WHEN** the user clicks the wrap toggle while viewing a text file (or markdown Code/Blame tab) in wrap-on state
 - **THEN** the code block re-renders with `white-space: pre` (no wrapping)
 - **AND** lines longer than the viewport produce a horizontal scrollbar inside the code block, not on the page
 - **AND** the toggle's `aria-pressed` becomes `false`
 - **AND** clicking again returns the view to wrapped mode and `aria-pressed` becomes `true`
 
-#### Scenario: Choice persists across reloads and navigation
+#### Scenario: Choice persists across reloads, navigation, and tab switches
 
-- **WHEN** the user toggles wrap off, then reloads the page or navigates to a different text file
-- **THEN** the new view also renders with wrap off
+- **WHEN** the user toggles wrap off on a markdown Code tab, then switches to the Blame tab, reloads the page, or navigates to a text file
+- **THEN** the new view also renders with wrap off (wherever the wrap toggle applies)
 - **AND** `localStorage["explorer.wrap"]` reads `"off"`
 
 #### Scenario: Mobile compactness
 
-- **WHEN** the file viewer is rendered at a viewport width below 800 px and a text file is shown
+- **WHEN** the file viewer is rendered at a viewport width below 800 px in a tab where the wrap toggle is visible
 - **THEN** the wrap toggle occupies the same 32×32 footprint as the Copy-link icon button
 - **AND** no text label for the wrap action is visible
 
-#### Scenario: Markdown code blocks unaffected
+#### Scenario: Markdown fenced code blocks unaffected by the toggle
 
-- **WHEN** the user toggles wrap off and then opens a markdown file containing fenced code blocks
-- **THEN** the markdown's fenced code blocks render with their existing wrapping behavior
-- **AND** the wrap toggle is not displayed in the header for the markdown view
+- **WHEN** the user toggles wrap off and then views the Preview tab of a markdown file containing fenced code blocks
+- **THEN** the markdown's fenced code blocks render with their existing wrapping behavior (independent of the toggle)
+- **AND** the wrap toggle is not displayed in the header for the Preview tab
 
 ### Requirement: Text-like file line numbers
 
@@ -693,7 +718,11 @@ The line-number gutter SHALL NOT appear on rendered prose surfaces. Specifically
 
 The gutter SHALL apply only when the file viewer is rendering a text-like file through `CodeBlock` (i.e. `kind === 'text'`).
 
-When the active wrap preference is `off` (read from `localStorage["explorer.wrap"]` via the existing `useWrap` hook), the code area SHALL scroll horizontally inside the file-viewer code block, and the line-number gutter SHALL remain pinned to the left edge of the visible viewport (sticky-left) while the code text scrolls beneath it. The pinned gutter SHALL have an opaque background derived from the existing `var(--bg-panel)` token so scrolled code text is not visible through it.
+The line-number gutter cell (`.line-no`) SHALL have a `1px solid var(--line)` right border separating it from the code content cell. The code content cell (`.line-text`) SHALL have `0.75ch` of left padding so that code text does not abut the border. The gutter cell SHALL use `var(--line-soft)` as its background colour so the gutter lane is visually distinguishable from the code content area (`var(--bg-panel)`).
+
+The top/bottom breathing room of the code block SHALL be provided by padding on the first and last grid-row cells (via `.code-line:first-child` / `.code-line:last-child` selectors) rather than on the `<pre>` container, so that the gutter background fills the full height of the panel with no uncoloured band above the first line or below the last line.
+
+When the active wrap preference is `off` (read from `localStorage["explorer.wrap"]` via the existing `useWrap` hook), the code area SHALL scroll horizontally inside the file-viewer code block, and the line-number gutter SHALL remain pinned to the left edge of the visible viewport (sticky-left) while the code text scrolls beneath it. The pinned gutter SHALL have an opaque background using `var(--line-soft)` so scrolled code text is not visible through it. The right border SHALL remain visible at the sticky left edge while the code cell scrolls.
 
 The line-number gutter SHALL be excluded from clipboard copies — a user selecting code (including with `Ctrl/Cmd+A`) SHALL receive only the source text, with no line numbers, when they copy and paste. The gutter SHALL also be marked `aria-hidden="true"` because the line content already conveys position to assistive technology.
 
@@ -704,6 +733,14 @@ Syntax highlighting for the line-numbered file viewer SHALL be performed per log
 - **WHEN** the SPA renders `internal/server/api.go` (a text-kind file with a registered grammar)
 - **THEN** every logical line is preceded in the gutter by its 1-based line number (`1`, `2`, `3`, …)
 - **AND** the numbers run from `1` to the file's total line count
+
+#### Scenario: Gutter divider is visible between numbers and code
+
+- **WHEN** a text-kind file is rendered in the file viewer
+- **THEN** a visible vertical line (`1px solid var(--line)`) is present between the line-number gutter and the code content
+- **AND** the gutter lane has a `var(--line-soft)` background that is visually distinct from the `var(--bg-panel)` code area
+- **AND** the code text has `0.75ch` left padding so it does not abut the divider line
+- **AND** the gutter background extends flush to the top and bottom edges of the panel (no uncoloured band above line 1 or below the last line)
 
 #### Scenario: Wrapped line keeps a single number
 
@@ -718,6 +755,7 @@ Syntax highlighting for the line-numbered file viewer SHALL be performed per log
 - **AND** scrolls the code area horizontally to the right
 - **THEN** the line-number gutter remains pinned to the left edge of the visible viewport
 - **AND** the gutter's background remains opaque so the scrolled code text is not visible through it
+- **AND** the right border of the gutter remains visible at the sticky left edge
 - **AND** the line numbers remain readable and aligned with their corresponding source lines
 
 #### Scenario: Line numbers are excluded from clipboard copies
@@ -755,3 +793,4 @@ Syntax highlighting for the line-numbered file viewer SHALL be performed per log
 - **THEN** each line of the comment is highlighted independently using the file's grammar
 - **AND** the resulting token colours on continuation lines may differ from the colours that would be produced by whole-file tokenisation
 - **AND** this re-tokenisation is the documented baseline (the same approach the diff renderer already uses)
+

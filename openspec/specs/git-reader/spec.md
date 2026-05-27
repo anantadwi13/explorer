@@ -3,9 +3,7 @@
 ## Purpose
 
 The git-reader capability extends `explorer` with read-only git history and working-tree browsing when the served root is itself a git repository. It exposes `/api/git/*` HTTP endpoints (repo gate, refs, commit history, commit detail, working-tree status, lazy hunks) and SPA views (`/git/commits`, `/git/commits/<sha>`, `/git/status`) with branch-picker and changes-badge affordances. The capability is gated on the presence of `.git` at the served root, never performs any write operation, and pages large responses (commits, files, hunks) so the UI stays responsive on large repositories.
-
 ## Requirements
-
 ### Requirement: Repository gate at the served root
 
 The git-reader capability SHALL be available only when the served root contains an entry named `.git` at its top level — either a directory, or a regular file resolvable as a git directory pointer (per `git worktree` semantics, parseable via `go-git`'s `PlainOpen`). The capability SHALL NOT walk ancestor directories looking for a `.git`.
@@ -643,8 +641,11 @@ In commit detail and status views, rendered hunks SHALL follow these rules:
 - Line backgrounds are themed via CSS custom properties: a light-green tint for additions, a light-red tint for deletions, default for context. The exact colours follow the active theme (light, dark, system) using the same custom-property pattern as the existing file viewer.
 - Source lines SHALL be syntax-highlighted using the same shared `lowlight` instance the file viewer uses (`web/src/components/syntax/grammars.ts`), with the language detected from the file path via the same `extToLanguage` helper. Highlighting is performed *per line* (the SPA does not have the surrounding file context), which is a known approximation for multi-line constructs (e.g. long string literals) but matches how widely-used diff viewers behave. When the file path has no registered grammar (`extToLanguage` returns `null`), lines render as plain monospace text.
 - The single-character `+`/`−`/space marker SHALL remain outside the highlighted span so its colour is driven by the diff palette, not the language grammar.
+- The change-type marker column (`.diff-line-marker`) SHALL have a `1px solid var(--line)` right border separating it from the code text cell. The code text cell (`.diff-line-text`) SHALL have `0.5ch` of left padding so that code text does not abut the border. The marker column SHALL be `1.75ch` wide (the third track in `.diff-hunk-lines` `grid-template-columns`) and SHALL carry `padding-right: 0.25ch` so the `+`/`−` glyph has breathing room before the border. The marker column and both gutter columns SHALL use `var(--line-soft)` as their opaque base background so the gutter lane is visually distinct from the code content.
+- In wrap-off mode, the sticky `left` offset for `.diff-gutter-new` SHALL be `calc(var(--gutter-old-w, 3ch) - 1px)` and for `.diff-line-marker` SHALL be `calc(var(--gutter-old-w, 3ch) + var(--gutter-new-w, 3ch) - 1px)`. The 1 px negative overlap prevents a subpixel transparent gap between adjacent sticky columns at certain device pixel ratios.
 - Long lines wrap inside the hunk block by default (no horizontal scroll on the page).
 - The commit detail and status views SHALL expose a wrap/no-wrap toggle button in their page header (same `WrapIcon` button used by the web-ui file viewer). The current wrap state SHALL be read from and written to the existing `localStorage["explorer.wrap"]` key via the existing `useWrap` hook — so toggling wrap inside the file viewer and inside the diff views shares one global preference (single key, no surprise). When wrap is OFF, hunk bodies SHALL allow horizontal scroll instead of wrapping (`white-space: pre` + `overflow-x: auto`). When wrap is ON (the default), behaviour matches the previous bullet (no horizontal scroll on the page).
+- **Mobile font-size**: at viewport widths ≤767px the entire `.diff-hunk-body` element (not its individual gutter children) SHALL carry `font-size: 0.75rem`. This ensures that the `ch` unit resolves from a single font-size context for both `grid-template-columns` on `.diff-hunk-lines` and `position: sticky; left:` on the gutter cells, preventing sticky mis-alignment on mobile.
 
 #### Scenario: Line backgrounds by theme
 
@@ -666,6 +667,14 @@ In commit detail and status views, rendered hunks SHALL follow these rules:
 - **WHEN** a hunk for `notes.foobar` is rendered (the extension has no grammar registered)
 - **THEN** the lines render as plain monospace text with no `hljs-*` token spans
 
+#### Scenario: Marker divider is visible between line numbers and code
+
+- **WHEN** a diff hunk is rendered
+- **THEN** a visible vertical line (`1px solid var(--line)`) is present on the right edge of the change-type marker column
+- **AND** the gutter and marker columns have a `var(--line-soft)` background visually distinct from the code content
+- **AND** the code text has `0.5ch` left padding so it does not abut the divider line
+- **AND** no transparent gap appears between the old-line-number, new-line-number, and marker columns when the diff scrolls horizontally in wrap-off mode
+
 #### Scenario: Long line wraps inside the hunk block
 
 - **WHEN** a line in a hunk is wider than the viewport
@@ -681,6 +690,14 @@ In commit detail and status views, rendered hunks SHALL follow these rules:
 - **AND** every rendered hunk body switches to `white-space: pre` with horizontal scroll inside the hunk block
 - **AND** the preference persists across page reloads via `localStorage["explorer.wrap"]`
 - **AND** the file viewer (when next opened on a text file) reads the same preference, so the wrap state is shared across both surfaces
+
+#### Scenario: Mobile horizontal scroll shows no gap between gutter and marker
+
+- **WHEN** the SPA is rendered at a viewport width ≤767px
+- **AND** wrap is OFF
+- **AND** the user scrolls a diff hunk horizontally to the right
+- **THEN** the old-line-number gutter, new-line-number gutter, and +/− marker remain flush with no transparent gap between them
+- **AND** the right border of the marker column remains visible and aligned with the sticky gutters
 
 #### Scenario: Wrap toggle does not render on web-ui routes
 
@@ -1026,15 +1043,23 @@ The strip SHALL NOT render when `is_repo` is false. When the strip is in a non-c
 
 ### Requirement: Code and Blame tabs in the file viewer
 
-For files whose preview kind is `text` (i.e. `kind === 'text'` in the `meta` response), the file viewer SHALL render a tablist above the content area with two tabs: "Code" and "Blame". The active tab SHALL be reflected in the URL via a `view` query parameter:
-- absent or any value other than `blame` → Code tab active
-- `view=blame` → Blame tab active
+For files whose preview kind is `text` (i.e. `kind === 'text'` in the `meta` response), the file viewer SHALL render a tablist above the content area with two tabs: "Code" and "Blame". For files whose preview kind is `markdown` (i.e. `kind === 'markdown'`), the file viewer SHALL render a tablist with three tabs: "Preview", "Code", and "Blame". For image and non-previewable files, the tablist SHALL NOT render.
 
-Activating a tab SHALL update the URL via the SPA router (no page reload). Reloading the page with `?view=blame` present SHALL restore the Blame tab.
+The active tab SHALL be reflected in the URL via a `view` query parameter whose value SHALL be one of `preview`, `code`, or `blame`. The SPA SHALL **always emit an explicit `view=` parameter** whenever it writes the URL after a tab interaction (i.e. the SPA SHALL NOT delete the parameter when activating the kind's default tab). On read, the SPA SHALL **tolerate** an absent or unrecognised `view=` value and fall back to the kind's natural default:
 
-The tablist SHALL follow standard ARIA tab-pattern semantics: `role="tablist"` on the container, `role="tab"` on each button, `aria-selected` on the active tab, left/right arrow keys move the active tab, Home/End jump to first/last.
+- `markdown` → default tab is `preview`
+- `text` → default tab is `code`
+- `image` / non-previewable → no tablist; `view=` has no effect
 
-For files whose preview kind is NOT `text` (markdown, image, non-previewable, or error), the tablist SHALL NOT render. A URL bearing `?view=blame` on such a file SHALL fall back silently to the existing Code-equivalent render (markdown render, image, fallback) with no error — the query parameter has no effect outside its supported scope.
+When `view=` carries a value that is valid in the union but not available for the active file kind (e.g. `view=preview` on a `text` file, `view=code` on an `image` file, `view=blame` on an `image` file), the SPA SHALL fall back to the kind's natural default with no error. The URL parameter retains its written value; the SPA does not rewrite it.
+
+Activating a tab SHALL update the URL via the SPA router (no page reload) using `replace: true` so tab toggles do not pile up browser history entries. Reloading the page with any valid `view=` value present SHALL restore the corresponding tab on first paint.
+
+The tablist SHALL follow standard ARIA tab-pattern semantics: `role="tablist"` on the container, `role="tab"` on each button, `aria-selected` on the active tab, left/right arrow keys move the active tab, Home/End jump to first/last. Keyboard navigation SHALL work uniformly for both the two-tab and three-tab variants.
+
+The content-area container's CSS class SHALL follow the **active renderer**, not the file kind, so the markdown Code and Blame tabs reuse the same panel chrome (background, border, rounded corners) the text Code and Blame tabs have always had. Specifically, when the active renderer is `<CodeBlock>` or `<BlameView>` (text Code/Blame OR markdown Code/Blame), the container SHALL carry the `vw-text` class. When the active renderer is `<MarkdownRenderer>` (markdown Preview), the container SHALL carry `vw-markdown` (markdown supplies its own `.md-body` chrome). When the renderer is the image preview, the container SHALL carry `vw-image`.
+
+The `at` query parameter is RESERVED in this URL grammar for a future "view file at commit" capability and SHALL be ignored by the current implementation — the SPA SHALL NOT read it on parse and SHALL NOT emit it on tab activations. However, when an inbound URL already carries an `at=` value (e.g. a user typed it or pasted a forward-looking link), the SPA SHALL preserve the parameter unchanged on subsequent tab writes rather than stripping it. This matches the "tolerant parse, generation-explicit" posture used for `view=` itself, and means the URL stays forward-compatible with the future change without the SPA actively suppressing it.
 
 #### Scenario: Tabs render for text files
 
@@ -1042,30 +1067,103 @@ For files whose preview kind is NOT `text` (markdown, image, non-previewable, or
 - **THEN** a tablist with Code and Blame tabs appears above the content area
 - **AND** the Code tab is the default active tab
 
-#### Scenario: Activating Blame writes the URL
+#### Scenario: Tabs render for markdown files
 
-- **WHEN** the user activates the Blame tab
+- **WHEN** the file viewer renders `/view/README.md` (`kind === 'markdown'`)
+- **THEN** a tablist with Preview, Code, and Blame tabs appears above the content area
+- **AND** the Preview tab is the default active tab
+- **AND** the rendered markdown body appears inside the Preview tab
+
+#### Scenario: Activating Blame on a text file writes an explicit URL
+
+- **WHEN** the user activates the Blame tab on `/view/internal/server/api.go`
 - **THEN** the URL becomes `/view/internal/server/api.go?view=blame`
 - **AND** the Blame view renders in place of `<CodeBlock>`
 
-#### Scenario: Deep link restores Blame
+#### Scenario: Activating Code on a markdown file writes an explicit URL
+
+- **WHEN** the user activates the Code tab on `/view/README.md`
+- **THEN** the URL becomes `/view/README.md?view=code`
+- **AND** the file content renders inside `<CodeBlock>` with markdown syntax highlighting
+
+#### Scenario: Activating Preview on a markdown file writes an explicit URL
+
+- **WHEN** the user activates the Preview tab from another tab on `/view/README.md?view=blame`
+- **THEN** the URL becomes `/view/README.md?view=preview` (the SPA does NOT delete the parameter)
+- **AND** the rendered markdown renders via `MarkdownRenderer`
+
+#### Scenario: Deep link restores Blame on a text file
 
 - **WHEN** the SPA loads `/view/internal/server/api.go?view=blame`
 - **THEN** the Blame tab is active on first paint
 - **AND** the Blame view fetches its data
 
-#### Scenario: Tabs absent on markdown
+#### Scenario: Deep link restores Code on a markdown file
 
-- **WHEN** the file viewer renders `/view/README.md`
-- **THEN** no tablist is rendered
-- **AND** the markdown renderer renders the file as before
+- **WHEN** the SPA loads `/view/README.md?view=code`
+- **THEN** the Code tab is active on first paint
+- **AND** the file renders inside `<CodeBlock>` with markdown syntax highlighting
 
-#### Scenario: `?view=blame` on a non-text file is inert
+#### Scenario: Legacy markdown URL without `view=` falls back to Preview
+
+- **WHEN** the SPA loads `/view/README.md` with no `view=` query parameter
+- **THEN** the Preview tab is active on first paint
+- **AND** the rendered markdown renders via `MarkdownRenderer`
+
+#### Scenario: Legacy text URL without `view=` falls back to Code
+
+- **WHEN** the SPA loads `/view/internal/server/api.go` with no `view=` query parameter
+- **THEN** the Code tab is active on first paint
+
+#### Scenario: `view=preview` on a text file falls back to Code
+
+- **WHEN** the SPA loads `/view/internal/server/api.go?view=preview`
+- **THEN** the Code tab is active on first paint
+- **AND** the URL parameter is left as `view=preview` (not rewritten by the SPA)
+- **AND** no error is shown
+
+#### Scenario: `view=blame` on a non-text, non-markdown file is inert
 
 - **WHEN** the file viewer renders `/view/logo.png?view=blame`
 - **THEN** no tablist is rendered
 - **AND** the image preview renders as if the parameter were absent
 - **AND** no error message appears
+
+#### Scenario: `at=` parameter is ignored on parse, preserved on emit
+
+- **WHEN** the SPA loads `/view/README.md?view=preview&at=abc1234`
+- **THEN** the Preview tab is active on first paint
+- **AND** the `at=` value is ignored by the current implementation
+- **AND** the rendering uses working-tree bytes (not commit-pinned bytes)
+- **AND** activating the Code tab writes `/view/README.md?view=code&at=abc1234` (the `at=` value is preserved, not stripped)
+
+#### Scenario: Keyboard navigation across three markdown tabs
+
+- **WHEN** the user focuses any tab in the markdown tablist
+- **AND** presses Right arrow repeatedly
+- **THEN** focus and activation cycle through Preview → Code → Blame → Preview
+- **AND** the corresponding view is rendered for each step
+- **AND** Home jumps to Preview and End jumps to Blame
+
+#### Scenario: Code tab on markdown applies markdown grammar
+
+- **WHEN** the Code tab is active on a `.md` file
+- **THEN** the rendered code block contains `hljs-*` token spans driven by the markdown grammar registered in `web/src/components/syntax/grammars.ts`
+- **AND** the markdown source's headings, fenced code fences, and emphasis markers render as visually distinct tokens
+
+#### Scenario: Blame tab on markdown renders BlameView
+
+- **WHEN** the SPA loads `/view/README.md?view=blame`
+- **THEN** the Blame tab is active on first paint
+- **AND** `BlameView` renders the markdown file's lines with the standard committed-chunk metadata (short_sha · subject · author · time) and per-line gutter
+- **AND** the wrap toggle is visible in the file head (because the active tab is Blame)
+
+#### Scenario: Markdown Code/Blame container reuses the text panel chrome
+
+- **WHEN** the SPA renders the Code or Blame tab on a markdown file
+- **THEN** the content-area container's class list includes `vw-text` (the same class text-file Code/Blame uses)
+- **AND** the panel background, border, and rounded corners are visually identical to a text file's Code or Blame tab
+- **AND** the markdown Preview tab's container does NOT carry `vw-text` (it carries `vw-markdown` and relies on `.md-body` for chrome)
 
 ### Requirement: Blame view rendering
 
@@ -1078,6 +1176,8 @@ Each blame chunk SHALL render as a visually distinct section:
 - **Uncommitted chunks** (`uncommitted: true` in the response) SHALL display the label `Working tree · uncommitted` in place of commit metadata, with no author, no timestamp, and no link. The chunk body SHALL render with a distinct background using a themed CSS custom property (e.g. `--blame-uncommitted-bg`) so the chunk reads as visually different from a committed chunk at a glance.
 
 Within each chunk, lines SHALL render in order with a single-column line-number gutter. The gutter SHALL be 1-based and continuous across chunks (i.e. the first line of the second chunk is `chunk1.start_line + chunk1.line_count`). Per-line syntax highlighting SHALL use the shared `lowlight` instance from `web/src/components/syntax/grammars.ts` with the language derived from the file path via `extToLanguage` (the same per-line approximation already used by `DiffHunk`). When `extToLanguage` returns `null`, lines SHALL render as plain monospace text.
+
+The line-number gutter cell (`.blame-gutter`) SHALL have a `1px solid var(--line)` right border separating it from the code content cell. The code content cell (`.blame-line-text`) SHALL have `0.75ch` of left padding so that code text does not abut the border. The gutter cell SHALL use `var(--line-soft)` as its background colour so the gutter lane is visually distinguishable from the code content area. The top/bottom breathing room within each chunk body SHALL be provided by padding on the first and last line cells (`.blame-line:first-child` / `.blame-line:last-child`) rather than on the chunk-body container, so the gutter background fills the full height of each chunk with no uncoloured band at the top or bottom.
 
 The Blame view SHALL respect the `localStorage["explorer.wrap"]` preference via the existing `useWrap` hook (no separate wrap toggle inside the Blame view — the file viewer's existing wrap toggle controls both Code and Blame views). When wrap is on, lines wrap inside the code cell; when off, the code cell scrolls horizontally and the line-number gutter (and, on viewports ≥768px, the chunk-metadata column) remain sticky-left in the same pattern used by the diff hunk gutter.
 
@@ -1104,6 +1204,14 @@ The Blame view SHALL be responsive at the existing `768px` SPA layout breakpoint
 
 - **WHEN** the Blame view renders chunks with start_line/line_count of (1,5), (6,3), (9,2)
 - **THEN** the line-number gutter reads 1..10 across the three chunks with no gap or repetition
+
+#### Scenario: Gutter divider is visible between line numbers and code
+
+- **WHEN** the Blame view renders any chunk
+- **THEN** a visible vertical line (`1px solid var(--line)`) is present on the right edge of the line-number gutter
+- **AND** the gutter lane has a `var(--line-soft)` background visually distinct from the code content area
+- **AND** the code text has `0.75ch` left padding so it does not abut the divider line
+- **AND** the gutter background fills the full height of each chunk body with no uncoloured band above the first line or below the last line of the chunk
 
 #### Scenario: Modified-locally banner
 
@@ -1259,3 +1367,4 @@ When `path` is absent, the view's behaviour SHALL be unchanged from the previous
 - **AND** the user activates "Load older commits"
 - **THEN** the SPA fetches `/api/git/commits?path=<file>&ref=<ref>&cursor=<next_cursor>`
 - **AND** the appended commits are also filtered to those touching `<file>`
+

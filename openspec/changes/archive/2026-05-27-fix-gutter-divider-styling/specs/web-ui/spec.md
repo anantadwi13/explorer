@@ -90,6 +90,8 @@ Syntax highlighting for the line-numbered file viewer SHALL be performed per log
 - **AND** the resulting token colours on continuation lines may differ from the colours that would be produced by whole-file tokenisation
 - **AND** this re-tokenisation is the documented baseline (the same approach the diff renderer already uses)
 
+## NEW Requirements
+
 ### Requirement: File last-commit strip — subject/author hierarchy
 
 When the file viewer renders the last-commit strip (`FileLastCommitStrip`) above a file's content, the strip SHALL display: short SHA · commit subject · author name · relative time, all in a single flex row.
