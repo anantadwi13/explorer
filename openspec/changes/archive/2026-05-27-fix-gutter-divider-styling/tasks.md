@@ -39,16 +39,16 @@
 
 ## 7. BlameView — uncommitted chunk contrast
 
-- [x] 6.1 In `web/src/styles/syntax.css`, update `:root` `--blame-uncommitted-bg` from `rgba(245, 158, 11, 0.12)` to `rgba(245, 158, 11, 0.25)`
-- [x] 6.2 Update `[data-theme="light"]` block to the same value `rgba(245, 158, 11, 0.25)`
-- [x] 6.3 Update `[data-theme="dark"]` block from `rgba(251, 191, 36, 0.18)` to `rgba(251, 191, 36, 0.22)`
-- [x] 6.4 Update the `color-mix` fallback in `BlameView.css` `.blame-chunk-uncommitted` from `8%` to `25%`
+- [x] 7.1 In `web/src/styles/syntax.css`, update `:root` `--blame-uncommitted-bg` from `rgba(245, 158, 11, 0.12)` to `rgba(245, 158, 11, 0.25)`
+- [x] 7.2 Update `[data-theme="light"]` block to the same value `rgba(245, 158, 11, 0.25)`
+- [x] 7.3 Update `[data-theme="dark"]` block from `rgba(251, 191, 36, 0.18)` to `rgba(251, 191, 36, 0.22)`
+- [x] 7.4 Update the `color-mix` fallback in `BlameView.css` `.blame-chunk-uncommitted` from `8%` to `25%`
 
-## 7. Build and verify
+## 8. Build and verify
 
-- [x] 7.1 Run `make web` to rebuild the SPA and confirm no build errors
-- [x] 7.2 Open a text file in the file viewer (Code tab) and confirm the vertical divider line appears between line numbers and code, gutter background is visually distinct, and gutter fills the full panel height (no gap at top or bottom)
-- [x] 7.3 Open the Blame tab and confirm the divider appears between line numbers and code, gutter background is visible, no gap at top/bottom of chunks, and uncommitted chunks are clearly distinguishable (amber tint visible in light mode)
-- [x] 7.4 Open a commit diff and confirm the divider appears between the +/− marker and code text, marker column is wide enough, gutter background is distinct
-- [x] 7.5 Enable wrap-off and scroll horizontally in a diff hunk on a narrow viewport (≤767px); confirm no transparent gap appears between the old-line-number gutter, new-line-number gutter, and the +/− marker
-- [x] 7.6 Run `make web-commit` to sync `internal/server/ui/dist/` and stage the updated dist files
+- [x] 8.1 Run `make web` to rebuild the SPA and confirm no build errors
+- [x] 8.2 Open a text file in the file viewer (Code tab) and confirm the vertical divider line appears between line numbers and code, gutter background is visually distinct, and gutter fills the full panel height (no gap at top or bottom)
+- [x] 8.3 Open the Blame tab and confirm the divider appears between line numbers and code, gutter background is visible, no gap at top/bottom of chunks, and uncommitted chunks are clearly distinguishable (amber tint visible in light mode)
+- [x] 8.4 Open a commit diff and confirm the divider appears between the +/− marker and code text, marker column is wide enough, gutter background is distinct
+- [x] 8.5 Enable wrap-off and scroll horizontally in a diff hunk on a narrow viewport (≤767px); confirm no transparent gap appears between the old-line-number gutter, new-line-number gutter, and the +/− marker
+- [x] 8.6 Run `make web-commit` to sync `internal/server/ui/dist/` and stage the updated dist files
