@@ -20,10 +20,12 @@
   --color-diff-del-bg: rgba(239, 68, 68, 0.18);
   --color-diff-del-fg: #b91c1c;
 
-  /* Blame "uncommitted" chunk background — a muted amber tint to distinguish
+  /* Blame "uncommitted" chunk background — an amber tint to distinguish
      locally-edited lines from committed ones without borrowing the diff
-     add/del semantics (blame chunks group by commit, not by change type). */
-  --blame-uncommitted-bg: rgba(245, 158, 11, 0.12);
+     add/del semantics (blame chunks group by commit, not by change type).
+     Opacity is higher than the diff tints (0.25 vs 0.18) because amber has
+     lower perceptual contrast against near-white backgrounds than green/red. */
+  --blame-uncommitted-bg: rgba(245, 158, 11, 0.25);
 }
 
 [data-theme="light"] {
@@ -43,7 +45,7 @@
   --color-diff-del-bg: rgba(239, 68, 68, 0.18);
   --color-diff-del-fg: #b91c1c;
 
-  --blame-uncommitted-bg: rgba(245, 158, 11, 0.12);
+  --blame-uncommitted-bg: rgba(245, 158, 11, 0.25);
 }
 
 [data-theme="dark"] {
@@ -63,7 +65,7 @@
   --color-diff-del-bg: rgba(239, 68, 68, 0.22);
   --color-diff-del-fg: #f87171;
 
-  --blame-uncommitted-bg: rgba(251, 191, 36, 0.18);
+  --blame-uncommitted-bg: rgba(251, 191, 36, 0.22);
 }
 
 /* Map highlight.js class names onto the custom properties above. */

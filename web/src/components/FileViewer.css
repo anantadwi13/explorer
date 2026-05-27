@@ -81,7 +81,7 @@
 }
 .code-block {
   margin: 0;
-  padding: 24px 28px 24px 0;
+  padding: 0 28px 0 0;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
@@ -133,16 +133,29 @@
   text-align: right;
   user-select: none;
   color: var(--fg-muted);
-  padding: 0 1ch;
-  background: var(--bg-panel);
+  padding: 0 0.5ch 0 1ch;
+  background: var(--line-soft);
+  border-right: 1px solid var(--line);
 }
 .line-text {
   min-width: 0;
+  padding-left: 0.75ch;
 }
 .code-block.wrap-off .line-no {
   position: sticky;
   left: 0;
   z-index: 1;
+}
+/* Top/bottom breathing room lives on the first/last cells so the gutter
+   background (set on .line-no) fills the entire height of the panel —
+   no gap above line 1 or below the last line. */
+.code-line:first-child .line-no,
+.code-line:first-child .line-text {
+  padding-top: 24px;
+}
+.code-line:last-child .line-no,
+.code-line:last-child .line-text {
+  padding-bottom: 24px;
 }
 
 .vw-fallback {

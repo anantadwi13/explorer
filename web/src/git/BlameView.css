@@ -114,7 +114,7 @@
    `web/src/styles/syntax.css`. A locally-set fallback keeps the chunk
    tinted even when the token isn't present (older themes). */
 .blame-chunk-uncommitted {
-  background: var(--blame-uncommitted-bg, color-mix(in srgb, var(--accent) 8%, transparent));
+  background: var(--blame-uncommitted-bg, color-mix(in srgb, var(--accent) 25%, transparent));
 }
 
 .blame-chunk-meta {
@@ -187,7 +187,7 @@
   font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.5;
-  padding: 6px 0;
+  padding: 0;
   overflow: hidden;
   /* `--blame-gutter-w` is set inline per blame view (digit count of
      total_lines + 1ch padding). Falls back to 4ch so a stripped-down test
@@ -234,20 +234,33 @@
   /* Opaque base so the sticky-left gutter occludes diff text scrolling
      beneath it in wrap-off mode. Uncommitted chunks override this with a
      layered background that mixes the amber tint over the opaque base. */
-  background: var(--bg-panel);
+  background: var(--line-soft);
+  border-right: 1px solid var(--line);
 }
 
 .blame-line-text {
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
-  padding: 0 0.5ch 0 0;
+  padding: 0 0.5ch 0 0.75ch;
 }
 
 .blame-view.wrap-off .blame-line-text {
   white-space: pre;
   word-break: normal;
   overflow-wrap: normal;
+}
+
+/* Top/bottom breathing room pushed into first/last cells so the gutter
+   background fills the full height of each chunk body — no gap above the
+   first line or below the last. */
+.blame-line:first-child .blame-gutter,
+.blame-line:first-child .blame-line-text {
+  padding-top: 6px;
+}
+.blame-line:last-child .blame-gutter,
+.blame-line:last-child .blame-line-text {
+  padding-bottom: 6px;
 }
 
 /* In wrap-off mode, pin the line-number gutter to the left edge of the
@@ -265,7 +278,7 @@
    text in wrap-off) but layer the amber chunk tint on top via
    background-image, matching how DiffHunk handles add/del tinted rows. */
 .blame-chunk-uncommitted .blame-gutter {
-  background-color: var(--bg-panel);
+  background-color: var(--line-soft);
   background-image: linear-gradient(var(--blame-uncommitted-bg), var(--blame-uncommitted-bg));
 }
 
