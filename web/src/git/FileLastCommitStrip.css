@@ -17,9 +17,14 @@
   color: var(--fg);
 }
 
-.file-last-commit-pills {
+/* Action band — pill (optional) on the left, History link on the right.
+   Same layout on desktop and mobile; `margin-left: auto` on the History
+   link is what pushes it to the trailing edge whether or not the pill
+   is rendered. */
+.file-last-commit-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
 
@@ -55,6 +60,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .file-last-commit-summary {
@@ -122,22 +128,12 @@
   color: var(--fg);
   text-decoration: none;
   flex-shrink: 0;
+  /* Always trailing-edge — the pill (when present) sits on the left side
+     of the action band, the History link on the right, regardless of how
+     many pills are rendered. */
+  margin-left: auto;
 }
 .file-last-commit-history:hover {
   border-color: var(--fg-muted);
   text-decoration: none;
-}
-
-/* On narrow viewports the strip wraps the pill row above the summary row.
-   Mirrors the mobile-readable constraint stated in the requirement. */
-@media (max-width: 767px) {
-  .file-last-commit-body {
-    flex-wrap: wrap;
-  }
-  .file-last-commit-summary {
-    flex-basis: 100%;
-  }
-  .file-last-commit-history {
-    margin-left: auto;
-  }
 }

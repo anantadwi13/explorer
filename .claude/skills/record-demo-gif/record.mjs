@@ -325,26 +325,26 @@ ws.on('open', async () => {
       await moveAndClickSelector('a.commit-subject', 600);
       await sleep(2000);
 
-      // Scene 6: per-file history + blame — navigate back to the root listing
-      // and open a tracked text file (b/new.txt) so the new file-viewer
-      // affordances appear: the last-commit strip between the file head and
-      // the content area, plus the Code | Blame tablist (rendered only for
-      // text-kind files). Switching to Blame replaces <CodeBlock> with the
-      // <BlameView>, then the strip's "History" pill takes the user to the
-      // path-filtered commits list.
-      await evalJs("history.go(-2)"); // commit detail → list → root view
-      await sleep(900);
-      // The sidebar tree shows `b/` as a folder; expand it via the chevron
-      // and then click `b/new.txt`. The aria-label uses the folder's name.
+      // Scene 6: per-file history + blame on a *modified-locally* text file.
+      // Navigate back to /view/ through the persistent sidebar tree (no
+      // keyboard or history.back — every action in the demo is mouse-only
+      // so the recording reads as a clickable product tour). The b/ folder
+      // chevron expands the tree node, then b/new.txt opens — that file is
+      // unstaged in the sample-repo's working tree, so the strip shows the
+      // `Modified locally` pill and the Blame view shows the dirty overlay
+      // with an `uncommitted` chunk for the post-rename edit.
       await moveAndClickSelector('button[aria-label="Expand b"]', 500);
       await sleep(500);
       await moveAndClickSelector('a.tree-row[href$="/view/b/new.txt"]', 600);
       await sleep(1300);
-      // The strip + Code|Blame tablist now sit above the code block. Click
-      // the Blame tab.
+      // Code | Blame tablist now sits above the code block; the strip's
+      // "Modified locally" pill is visible on the action row. Click Blame
+      // — BlameView renders with `dirty: true`, the "Modified locally"
+      // status bar, and an `uncommitted: true` chunk for the appended line.
       await moveAndClickButtonText('Blame', '[role="tablist"]', 450);
-      await sleep(1500);
-      // Drop into the path-filtered commits list via the strip's History pill.
+      await sleep(1800);
+      // Drop into the path-filtered commits list via the strip's History
+      // pill — the banner + status row exercise the path-filter UI too.
       await moveAndClickSelector('a.file-last-commit-history', 500);
       await sleep(2000);
     } else {
@@ -415,19 +415,20 @@ ws.on('open', async () => {
       await moveAndClickSelector('a.commit-subject', 600);
       await sleep(1900);
 
-      // Scene 7: per-file history + blame on mobile. Pop back to the root,
-      // expand the `b/` folder in the drawer, open `b/new.txt`, then switch
-      // to the Blame tab. The Blame view's chunk metadata stacks above the
-      // line range below the 768 px breakpoint, matching the stacked-layout
-      // requirement for narrow viewports.
-      await evalJs("history.go(-2)"); // commit detail → list → root view
-      await sleep(900);
+      // Scene 7: per-file history + blame on mobile, modified-locally case.
+      // Mouse-only navigation: re-open the drawer, expand the `b/` folder,
+      // tap `b/new.txt`. The drawer auto-closes (closeSidebar fires on the
+      // file link); the file viewer renders with the `Modified locally`
+      // pill on the strip's action row and the Code|Blame tablist above the
+      // body. Tapping Blame shows the stacked-metadata layout (chunk meta
+      // above the line range, below the 768 px breakpoint) plus the dirty
+      // overlay with an `uncommitted` chunk for the post-rename edit.
       await moveAndClickSelector('button[aria-label="Open folders"]', 500);
       await sleep(700);
       await moveAndClickSelector('button[aria-label="Expand b"]', 450, { minX: 0 });
       await sleep(500);
       await moveAndClickSelector('a.tree-row[href$="/view/b/new.txt"]', 500, { minX: 0 });
-      await sleep(1400);
+      await sleep(1500);
       await moveAndClickButtonText('Blame', '[role="tablist"]', 450);
       await sleep(2000);
     }

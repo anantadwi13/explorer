@@ -42,6 +42,9 @@
 }
 
 .blame-dirty-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--bg-soft);
@@ -64,6 +67,29 @@
 }
 .blame-pill.pill-modified .blame-pill-dot {
   color: var(--color-diff-add-fg);
+}
+
+/* "Refetching blame…" pill — shown above cached chunks while the SWR
+   background fetch is in flight. The spinner conveys "this is computing"
+   without claiming the cached chunks are wrong; it disappears the moment
+   the fetch resolves. */
+.blame-pill.pill-refetching {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.blame-pill-spinner {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 1.5px solid var(--line);
+  border-top-color: var(--fg-muted);
+  border-radius: 50%;
+  animation: blame-spinner 0.8s linear infinite;
+}
+
+@keyframes blame-spinner {
+  to { transform: rotate(360deg); }
 }
 
 .blame-chunks {
@@ -143,6 +169,20 @@
   font-style: italic;
 }
 
+.blame-chunk-pending-label {
+  color: var(--fg-muted);
+  font-style: italic;
+  /* Slow pulse so the user notices the metadata column is still resolving
+     without it becoming a distraction. The animation reads as "computing"
+     rather than "broken". */
+  animation: blame-pending-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes blame-pending-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+
 .blame-chunk-body {
   font-family: var(--font-mono);
   font-size: 0.85rem;
@@ -159,15 +199,31 @@
   overflow-x: auto;
 }
 
-.blame-line {
+/* The chunk-lines grid is the single positioning context for all lines in
+   the chunk. Sticky-left on each .blame-gutter is therefore relative to
+   the SCROLL container (`.blame-chunk-body`), not to each individual line —
+   without this, scrolling horizontally would slide the gutter off-screen
+   along with the line's bounding box. Each line uses `grid-template-columns:
+   subgrid` so the [gutter | text] tracks line up across rows.
+
+   The trailing `1fr` filler track keeps row tints reaching the right edge
+   when the longest line is shorter than the visible body, matching the
+   DiffHunk pattern. */
+.blame-chunk-lines {
   display: grid;
-  grid-template-columns: var(--blame-gutter-w) minmax(0, 1fr);
-  align-items: baseline;
+  grid-template-columns: var(--blame-gutter-w) minmax(0, max-content) 1fr;
 }
 
-.blame-view.wrap-off .blame-line {
+.blame-view.wrap-off .blame-chunk-lines {
   width: max-content;
   min-width: 100%;
+}
+
+.blame-line {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: baseline;
 }
 
 .blame-gutter {
@@ -175,6 +231,10 @@
   user-select: none;
   color: var(--fg-muted);
   padding: 0 0.5ch;
+  /* Opaque base so the sticky-left gutter occludes diff text scrolling
+     beneath it in wrap-off mode. Uncommitted chunks override this with a
+     layered background that mixes the amber tint over the opaque base. */
+  background: var(--bg-panel);
 }
 
 .blame-line-text {
@@ -192,17 +252,21 @@
 
 /* In wrap-off mode, pin the line-number gutter to the left edge of the
    scrolling chunk body so a horizontally-scrolled long line still shows
-   its number. Mirrors the equivalent `.diff-hunk-body.wrap-off .diff-gutter`
-   pattern. */
+   its number. Sticky is relative to `.blame-chunk-body` (the scrolling
+   ancestor) because the gutter participates in the chunk's single grid
+   via subgrid — not its own per-line grid. */
 .blame-view.wrap-off .blame-gutter {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: var(--bg-panel);
 }
 
+/* Uncommitted chunks: keep the gutter opaque (so it occludes scrolled
+   text in wrap-off) but layer the amber chunk tint on top via
+   background-image, matching how DiffHunk handles add/del tinted rows. */
 .blame-chunk-uncommitted .blame-gutter {
-  background-color: transparent;
+  background-color: var(--bg-panel);
+  background-image: linear-gradient(var(--blame-uncommitted-bg), var(--blame-uncommitted-bg));
 }
 
 @media (min-width: 768px) {

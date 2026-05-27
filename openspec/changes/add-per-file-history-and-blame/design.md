@@ -178,11 +178,13 @@ The changes badge migrates from doing its own fetch to reading from the context.
 
 **Trade-off:** Widens the `ApiError` union by one. Acceptable.
 
-### Decision 12: Strip uses the same one-line shape as `CommitsListPage`'s card subject
+### Decision 12: Strip uses a two-row layout — summary on top, action row [pill] [History] on the bottom
 
-**Choice:** The strip's body reads `<short_sha> · <subject> · <author> · <relative-time>` followed by the History pill. On viewports where it doesn't fit, the subject ellipses (CSS `text-overflow: ellipsis`); the rest stays.
+**Choice:** The strip lays out as two rows: a summary row carrying `<short_sha> · <subject> · <author> · <relative-time>` (or an "Untracked / No commits yet" placeholder), and a single action row carrying an optional status pill on its leading edge and the History affordance on its trailing edge. The same layout runs on both desktop (≥768px) and mobile (<768px). On viewports where the summary row doesn't fit, the subject ellipses (CSS `text-overflow: ellipsis`); the rest of the metadata stays.
 
-**Why:** Consistency with the commits list (same field order, same separator) makes the History navigation feel like a continuation rather than a context switch. Subject is the only variable-width field and the only one we can sensibly truncate.
+**Why:** Predictable target for the History pill across viewports — it always lives in the same relative position regardless of whether a status pill is rendered. The earlier "pill above summary" / "pill on its own row on mobile, summary on its own row on desktop" shape made the History affordance move between viewports, which fought muscle memory once users started tapping it from the same file across screen widths. Grouping pill and History on the same row also reads as "what's the status of this file, and where do I go to see more" — they're conceptually one band.
+
+**Rejected:** the original one-row "summary + History" shape with the pill floating above. Looked clean on desktop, but the pill stacked under the action row on mobile (per the original `MAY wrap to two rows` allowance), so the layout was already two-row in practice — just inconsistent.
 
 ### Decision 13: Path-filter banner is sticky and offers an explicit clear
 
@@ -195,6 +197,35 @@ The changes badge migrates from doing its own fetch to reading from the context.
 **Choice:** When the blame walk reaches the commit where the path was created via rename, the walk stops. Earlier history of the file under its old path is *not* included.
 
 **Why:** Following renames in blame is delicate to begin with (heuristic-based, can be wrong); combining it with the working-tree overlay multiplies the edge cases (rename + local edit + the renamed predecessor's blame). v1 ships the simpler shape and documents the limitation. Future work can extend the response with an optional "history continues at `<old_path>` before `<sha>`" pointer.
+
+### Decision 15: Blame loads progressively — file content first, attribution second
+
+**Choice:** The Blame view fires the `/raw/<path>` and `/api/git/blame` requests in parallel but renders independently. The moment `/raw/` resolves (~milliseconds), the file content + line-number gutter paint, with a single placeholder chunk spanning the entire file whose metadata cell reads `Computing blame…`. When the blame response lands, the placeholder is replaced with real chunks in place.
+
+**Why:** go-git's `Blame()` walks the commit DAG line-by-line and routinely takes several seconds on moderately-aged files. The original "wait for both then render" pattern made the Blame tab feel broken on first open. Splitting the two tracks gives the user something to read immediately — they can scroll, copy text, even navigate — while attribution computes in the background.
+
+**Trade-off:** the placeholder is a new visual state to maintain. Acceptable: it's the same chunk-row layout as a normal chunk, just with a different metadata cell, so the grid/gutter/code-cell wiring is reused.
+
+### Decision 16: Client-side stale-while-revalidate cache for blame, with request dedup
+
+**Choice:** The SPA maintains a module-level `(path, ref) → BlameResponse` cache + an `inFlight` map of pending Promises. On every Blame mount:
+
+1. Read the cache synchronously. If hit, render the cached chunks immediately (no "Computing blame…" placeholder).
+2. Always fire a background fetch via a deduping `fetchBlame()` wrapper that returns the in-flight Promise if one already exists for the same key.
+3. While the background fetch is in flight AND cached chunks are visible, render a `Refetching blame…` status pill above the chunk list.
+4. On fetch settlement, update the cache + state. The pill goes away.
+
+The cache is per-tab, never persisted; a full page reload re-initialises it to empty.
+
+**Why:** Rapid Code ↔ Blame ↔ Code swaps were the worst-case UX — each Blame open re-paid the multi-second blame walk. With SWR, the second open feels instant. Dedup matters when the user opens Blame, unmounts before the request resolves, and re-opens shortly after: the original request keeps running, populates the cache on completion, and the remount joins the same Promise rather than starting a duplicate.
+
+The `Refetching blame…` pill is the answer to "how does the user know the cached chunks might be stale?" It's a small visual surface for the otherwise-invisible background work — important when the cached attribution genuinely could be out of date (the working tree was edited, a new commit landed, etc).
+
+**Why this doesn't violate the spec's "no caching" non-goal:** that non-goal targets the **server**. Every `/api/git/blame` HTTP request that does reach the server still invokes go-git fresh. The cache is purely a SPA optimization between request-issuing components.
+
+**Trade-off:** stale data can be visible for a few seconds after the file changes externally. Bounded by the background fetch latency. Documented as a deliberate UX choice.
+
+**Rejected:** persisting the cache to `localStorage`. Storage would survive reloads but the spec's "no live updates" non-goal explicitly says a page reload is the user's signal to re-fetch — persisting would silently bypass that.
 
 ## Risks / Trade-offs
 

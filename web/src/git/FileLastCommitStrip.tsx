@@ -74,16 +74,15 @@ export default function FileLastCommitStrip({ path }: Props) {
   const noCommitState = status === 'untracked' || empty
   const loading = !noCommitState && !fetched
 
+  // The strip lays out as two rows for both desktop and mobile so the
+  // pill never lives on a row of its own. Top row is the commit summary;
+  // bottom row is the action band [pill?] [History]. The two-row shape
+  // makes the History pill predictable to target and keeps the desktop
+  // and mobile layouts identical (a regression the previous design caused
+  // — desktop showed pill-above-summary, mobile showed pill on its own
+  // line, and the History link's position shifted between viewports).
   return (
     <div className="file-last-commit-strip" data-status={status}>
-      {showPill && (
-        <div className="file-last-commit-pills">
-          <span className={`file-last-commit-pill pill-${status === 'untracked' ? 'untracked' : 'modified'}`}>
-            <span className="file-last-commit-pill-dot" aria-hidden="true">●</span>
-            {status === 'untracked' ? 'Untracked' : 'Modified locally'}
-          </span>
-        </div>
-      )}
       <div className="file-last-commit-body">
         {loading ? (
           <span className="file-last-commit-loading" aria-busy="true">Loading commit…</span>
@@ -91,6 +90,14 @@ export default function FileLastCommitStrip({ path }: Props) {
           <span className="file-last-commit-empty">No commits yet</span>
         ) : (
           commit && <CommitSummary commit={commit} />
+        )}
+      </div>
+      <div className="file-last-commit-actions">
+        {showPill && (
+          <span className={`file-last-commit-pill pill-${status === 'untracked' ? 'untracked' : 'modified'}`}>
+            <span className="file-last-commit-pill-dot" aria-hidden="true">●</span>
+            {status === 'untracked' ? 'Untracked' : 'Modified locally'}
+          </span>
         )}
         <Link to={historyHref} className="file-last-commit-history" aria-label="View history for this file">
           History

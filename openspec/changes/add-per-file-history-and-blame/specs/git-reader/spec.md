@@ -231,34 +231,36 @@ The endpoint SHALL stop at the first rename boundary — earlier history of the 
 
 When the served root is a git repository (`is_repo: true`), the file viewer at `/view/<path>` (file route, no trailing slash) SHALL render a "last commit" strip between the file header and the content area. The strip SHALL render for every file kind (text, markdown, image, non-previewable, error states) — its visibility is gated only on `is_repo` and on the path itself, not on the file's preview kind.
 
+The strip SHALL render as two rows: an upper **summary row** carrying the commit metadata (or an "Untracked / No commits yet" placeholder), and a lower **action row** carrying an optional status pill on its leading edge and the "History" affordance on its trailing edge. The two-row layout is identical on desktop (≥768px) and mobile (<768px) so the History affordance's position is predictable across viewports.
+
 The strip SHALL render in one of three states, determined by the file's working-tree status (read from the same `/api/git/status` response used by the changes badge — see the "SPA renders git affordances only when repo is present" requirement and the "Changes badge affordance" requirement) and by the result of a `GET /api/git/commits?path=<path>&limit=1` lookup:
 
-- **Clean tracked file** (path absent from staged, unstaged, untracked; one or more commits exist): the strip displays `<short_sha> · <subject> · <author_name> · <relative-time>` followed by a "History" affordance linking to `/git/commits?path=<encoded path>&ref=<active ref>`. The short_sha and subject SHALL be linked to `/git/commits/<sha>`. The subject SHALL truncate with `text-overflow: ellipsis` when the strip is narrower than the content; the rest of the metadata SHALL remain visible.
-- **Modified locally** (path present in staged or unstaged): the strip displays the same one-line commit summary as the clean state PLUS a status pill labelled `Modified locally` above the summary. The History affordance behaves identically to the clean state.
-- **Untracked** (path present in untracked, or path is tracked but produced an empty commits response on the active ref): the strip displays a status pill labelled `Untracked` together with the message `No commits yet`. The History affordance SHALL still be present and SHALL link to `/git/commits?path=<encoded path>` (the commits-list page will render its own untracked banner).
+- **Clean tracked file** (path absent from staged, unstaged, untracked; one or more commits exist): the summary row displays `<short_sha> · <subject> · <author_name> · <relative-time>`; the action row carries only the "History" affordance linking to `/git/commits?path=<encoded path>&ref=<active ref>`. The short_sha and subject SHALL be linked to `/git/commits/<sha>`. The subject SHALL truncate with `text-overflow: ellipsis` when the strip is narrower than the content; the rest of the metadata SHALL remain visible.
+- **Modified locally** (path present in staged or unstaged): the summary row displays the same one-line commit summary as the clean state. The action row carries a `Modified locally` status pill on its leading edge and the History affordance on its trailing edge.
+- **Untracked** (path present in untracked, or path is tracked but produced an empty commits response on the active ref): the summary row displays the message `No commits yet`. The action row carries an `Untracked` status pill on its leading edge and the History affordance on its trailing edge, with the History affordance linking to `/git/commits?path=<encoded path>` (the commits-list page will render its own untracked banner).
 
 The strip SHALL NOT render when `is_repo` is false. When the strip is in a non-clean state (modified locally or untracked), the status pill SHALL use the same visual treatment as the changes-badge pill (chrome from the documented SPA design-token vocabulary — see the "Git surfaces use the documented SPA design tokens" requirement).
-
-On viewport widths below `768px`, the strip MAY wrap to two rows (status pill on the first row, commit summary on the second) to keep the layout readable on a 360 px viewport.
 
 #### Scenario: Clean tracked file
 
 - **WHEN** the file viewer renders `/view/internal/server/api.go` on a clean tracked file in a repo
 - **THEN** the strip renders between the file head and the content area
-- **AND** the strip body reads `<short_sha> · <subject> · <author_name> · <relative-time>`
-- **AND** the History affordance is a link to `/git/commits?path=internal%2Fserver%2Fapi.go&ref=<active ref>`
+- **AND** the summary row reads `<short_sha> · <subject> · <author_name> · <relative-time>`
+- **AND** the action row contains only the History affordance, linking to `/git/commits?path=internal%2Fserver%2Fapi.go&ref=<active ref>`
 - **AND** the short_sha is a link to `/git/commits/<sha>`
 
 #### Scenario: Modified locally
 
 - **WHEN** the file viewer renders `/view/internal/server/api.go` on a file present in the unstaged section of `/api/git/status`
-- **THEN** the strip renders a `Modified locally` status pill above the commit summary
-- **AND** the rest of the strip body matches the clean state
+- **THEN** the summary row matches the clean state
+- **AND** the action row carries a `Modified locally` status pill on its leading edge and the History affordance on its trailing edge
+- **AND** the two pills are on the same horizontal line
 
 #### Scenario: Untracked file
 
 - **WHEN** the file viewer renders `/view/notes.txt` on a file present in the untracked section of `/api/git/status`
-- **THEN** the strip renders an `Untracked` status pill and the message `No commits yet`
+- **THEN** the summary row reads `No commits yet`
+- **AND** the action row carries an `Untracked` status pill on its leading edge and the History affordance on its trailing edge
 - **AND** the History affordance links to `/git/commits?path=notes.txt`
 - **AND** no commit metadata is shown (no short_sha, no author, no time)
 - **AND** the SPA SHALL NOT issue the `GET /api/git/commits?path=<path>&limit=1` request for untracked files
@@ -401,6 +403,62 @@ The Blame view SHALL be responsive at the existing `768px` SPA layout breakpoint
 - **WHEN** the Blame view renders a file whose extension has no registered grammar (`extToLanguage` returns `null`)
 - **THEN** the code cell renders as plain monospace text with no `hljs-*` token spans
 - **AND** chunk grouping and the line-number gutter are unaffected
+
+### Requirement: Blame view progressive loading and stale-while-revalidate
+
+The Blame view's two data inputs — `/raw/<path>` (working-tree bytes; ~milliseconds) and `/api/git/blame` (commit-DAG walk; commonly seconds) — SHALL load independently. The view SHALL paint file content + line-number gutter as soon as `/raw/<path>` resolves, even if `/api/git/blame` is still in flight. While the blame response is pending, the view SHALL render a single placeholder chunk spanning the entire file whose metadata cell reads `Computing blame…`. Once the blame response arrives, the placeholder SHALL be replaced by the real chunks in place — no full re-render or content flash.
+
+The SPA SHALL maintain an in-memory cache of `/api/git/blame` responses keyed by `(path, ref)` for the lifetime of the SPA tab. On mount, the view SHALL read the cache synchronously: if an entry exists, the cached chunks SHALL render immediately (no `Computing blame…` placeholder). The view SHALL ALSO fire a background fetch on every mount — the cache is stale-while-revalidate, not write-once — so the user sees the freshest data if anything changed since the cached response (working tree modifications, new commits, ref switches).
+
+While a background fetch is in flight and cached chunks are visible, the view SHALL render a `Refetching blame…` status pill above the chunk list (alongside the `Modified locally` pill if present). The pill SHALL be removed when the background fetch settles.
+
+At most one `/api/git/blame` HTTP request SHALL be in flight per `(path, ref)` key at any time. A remount that arrives while a request is still pending SHALL await the same Promise rather than triggering a duplicate. The cache write SHALL be triggered by request settlement, not by component mount, so a request started by an unmounted component still populates the cache on completion.
+
+The cache is **client-side**; it does NOT relax the server-side "Caching of any kind" non-goal in the "Non-goals declared" requirement. Every `/api/git/blame` HTTP request that does reach the server SHALL invoke go-git fresh.
+
+The cache SHALL NOT persist across page reloads. A full browser refresh SHALL re-initialise the cache to empty, matching the existing "no live updates" non-goal — a reload is the user's signal that they want to see the latest state.
+
+#### Scenario: Cold mount renders content before blame resolves
+
+- **WHEN** the user opens the Blame tab on a file with no cached blame entry
+- **THEN** the file content + line-number gutter render as soon as `/raw/<path>` resolves
+- **AND** a single placeholder chunk spanning the entire file shows `Computing blame…` in its metadata cell
+- **AND** no `Refetching blame…` status pill is shown (the placeholder already conveys progress)
+
+#### Scenario: Warm mount renders cached chunks instantly
+
+- **WHEN** the user opens the Blame tab on a file whose blame entry is in the cache
+- **THEN** the cached chunks render synchronously on first paint
+- **AND** no `Computing blame…` placeholder is shown
+- **AND** a `Refetching blame…` status pill is rendered above the chunk list
+
+#### Scenario: Refetching pill disappears when background fetch settles
+
+- **WHEN** the background `/api/git/blame` fetch resolves successfully
+- **THEN** the cached chunks are replaced with the fresh response (when different)
+- **AND** the `Refetching blame…` status pill is removed
+- **AND** the rest of the layout (chunk metadata, gutter, code cells) updates in place without unmount
+
+#### Scenario: Concurrent mounts dedup the in-flight request
+
+- **WHEN** the user opens the Blame tab, instantly switches to Code, and instantly switches back to Blame — all before the original `/api/git/blame` call resolves
+- **THEN** the server SHALL receive exactly one `/api/git/blame` request for that `(path, ref)` key
+- **AND** the second mount SHALL await the same in-flight Promise as the first
+- **AND** when the Promise resolves, both the cache and the visible view update from that single response
+
+#### Scenario: Cache survives an unmount
+
+- **WHEN** the originating mount unmounts while its fetch is still pending
+- **AND** the fetch later resolves successfully
+- **THEN** the cache entry for that `(path, ref)` key SHALL be populated
+- **AND** a subsequent mount SHALL hit the cache and render chunks instantly
+
+#### Scenario: Background fetch error preserves cached data
+
+- **WHEN** the background `/api/git/blame` fetch returns a transient error and the view has cached chunks displayed
+- **THEN** the cached chunks SHALL remain visible (no error placeholder swap-in)
+- **AND** the `Refetching blame…` status pill SHALL be removed
+- **AND** the cache entry SHALL be left unchanged so the next mount still has data to show
 
 ### Requirement: Commits list view supports path filter
 

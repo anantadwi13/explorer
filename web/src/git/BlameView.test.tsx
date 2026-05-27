@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import BlameView from './BlameView'
+import BlameView, { __resetBlameCacheForTests } from './BlameView'
 import * as api from '../api/client'
 
 vi.mock('../api/client', () => ({
@@ -14,6 +14,9 @@ const fetchMock = vi.fn<typeof fetch>()
 beforeEach(() => {
   vi.clearAllMocks()
   vi.stubGlobal('fetch', fetchMock)
+  // The blame cache is module-level; clear it between cases so a previous
+  // test priming a key doesn't make the next test see an unexpected hit.
+  __resetBlameCacheForTests()
 })
 
 function rawResponse(text: string): Response {
@@ -160,6 +163,179 @@ describe('BlameView', () => {
     await screen.findByText(/Blame took too long/)
     const cta = screen.getByRole('link', { name: /open history/i })
     expect(cta.getAttribute('href')).toBe('/git/commits?path=big.go')
+  })
+
+  it('renders the file with a "Computing blame…" placeholder before blame resolves', async () => {
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+
+    renderBlame('main.go')
+
+    // Raw bytes resolve fast → file + gutter render with a placeholder
+    // metadata cell while go-git's blame walk is still in flight.
+    await screen.findByText(/Computing blame/i)
+    // Gutter still counts up across the synthesized full-file chunk.
+    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.queryByText('initial scaffold')).toBeNull()
+
+    // Once blame resolves, the placeholder swaps out for the real chunks.
+    resolveBlame({ ok: true, data: sampleBlame })
+    await screen.findByText('initial scaffold')
+    expect(screen.queryByText(/Computing blame/i)).toBeNull()
+  })
+
+  it('hits the in-memory cache on a second mount and skips the placeholder', async () => {
+    // Prime the cache by mounting once with an immediate-resolve mock.
+    vi.mocked(api.getGitBlame).mockResolvedValue({ ok: true, data: sampleBlame })
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+    const { unmount } = renderBlame('cached.go')
+    await screen.findByText('initial scaffold')
+    unmount()
+
+    // Second mount: the API mock stays unresolved so we can verify cache
+    // hit by checking that the chunks render *before* the background
+    // promise lands. If we were re-fetching, we'd see "Computing blame…"
+    // until the API resolves — instead we see the chunks immediately.
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    renderBlame('cached.go')
+    await screen.findByText('initial scaffold')
+    expect(screen.queryByText(/Computing blame/i)).toBeNull()
+    resolveBlame({ ok: true, data: sampleBlame })
+  })
+
+  it('dedupes concurrent in-flight requests for the same (path, ref) key', async () => {
+    // First mount fires a request. While it's still in flight, mount a
+    // second BlameView for the same path. The API should be called exactly
+    // once — the second mount joins the in-flight promise.
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    fetchMock.mockImplementation(async () => rawResponse(fileContent))
+
+    const first = renderBlame('dedupe.go')
+    await screen.findByText(/Computing blame/i)
+    expect(vi.mocked(api.getGitBlame)).toHaveBeenCalledTimes(1)
+
+    // Second mount before the first resolves — same path, same ref.
+    const second = renderBlame('dedupe.go')
+    expect(vi.mocked(api.getGitBlame)).toHaveBeenCalledTimes(1)
+
+    // Resolve the single in-flight promise. Both renders await this same
+    // promise; the cache populates from it.
+    resolveBlame({ ok: true, data: sampleBlame })
+    await new Promise((r) => setTimeout(r, 0))
+    first.unmount()
+    second.unmount()
+
+    // A *third* mount after resolution should hit the now-populated cache
+    // synchronously — no third API call (the background refresh fires a
+    // second call, but the cached render shows up before that resolves).
+    vi.mocked(api.getGitBlame).mockReturnValue(new Promise(() => {})) // never resolves
+    renderBlame('dedupe.go')
+    expect(await screen.findByText('initial scaffold')).toBeInTheDocument()
+    expect(screen.queryByText(/Computing blame/i)).toBeNull()
+  })
+
+  it('completes the in-flight fetch even after the originating mount unmounts', async () => {
+    // Open Blame, fire the request, then immediately switch away (unmount)
+    // before the API resolves. Resolving the promise still updates the
+    // cache; a fresh mount sees the cached result instantly.
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    fetchMock.mockImplementation(async () => rawResponse(fileContent))
+
+    const first = renderBlame('survive.go')
+    await screen.findByText(/Computing blame/i)
+    expect(vi.mocked(api.getGitBlame)).toHaveBeenCalledTimes(1)
+
+    // User switches to Code → BlameView unmounts mid-flight. The promise
+    // should still settle and populate the cache.
+    first.unmount()
+
+    resolveBlame({ ok: true, data: sampleBlame })
+    // Wait a tick for the .then chain to run cache.set + finally clear.
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Second mount — must show chunks immediately, no placeholder.
+    renderBlame('survive.go')
+    expect(await screen.findByText('initial scaffold')).toBeInTheDocument()
+    expect(screen.queryByText(/Computing blame/i)).toBeNull()
+  })
+
+  it('shows "Refetching blame…" while a background SWR fetch is in flight', async () => {
+    // Prime the cache.
+    vi.mocked(api.getGitBlame).mockResolvedValue({ ok: true, data: sampleBlame })
+    fetchMock.mockImplementation(async () => rawResponse(fileContent))
+    const { unmount } = renderBlame('refetch.go')
+    await screen.findByText('initial scaffold')
+    unmount()
+
+    // Second mount: cache hit, background request is pending.
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    renderBlame('refetch.go')
+    await screen.findByText('initial scaffold')
+    // Status bar shows "Refetching blame…" while the background promise is
+    // still pending.
+    expect(screen.getByText(/Refetching blame/i)).toBeInTheDocument()
+
+    // Once the background fetch resolves, the indicator goes away.
+    resolveBlame({ ok: true, data: sampleBlame })
+    await waitFor(() => {
+      expect(screen.queryByText(/Refetching blame/i)).toBeNull()
+    })
+  })
+
+  it('does not show the refetching indicator on a cold mount', async () => {
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    fetchMock.mockImplementation(async () => rawResponse(fileContent))
+    renderBlame('cold.go')
+    // Cold mount renders the chunk-level "Computing blame…" placeholder
+    // INSTEAD of the status-bar Refetching pill — they convey the same
+    // signal, no reason to show both.
+    await screen.findByText(/Computing blame/i)
+    expect(screen.queryByText(/Refetching blame/i)).toBeNull()
+    resolveBlame({ ok: true, data: sampleBlame })
+  })
+
+  it('falls through to the placeholder when no cache entry exists', async () => {
+    // A fresh path (not previously mounted) must not have a cache hit.
+    let resolveBlame: (v: { ok: true; data: typeof sampleBlame }) => void = () => {}
+    vi.mocked(api.getGitBlame).mockReturnValue(
+      new Promise((res) => {
+        resolveBlame = res
+      }),
+    )
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+    renderBlame('uncached-path.go')
+    await screen.findByText(/Computing blame/i)
+    resolveBlame({ ok: true, data: sampleBlame })
   })
 
   it('plays plain monospace for files with no registered grammar', async () => {

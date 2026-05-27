@@ -4,8 +4,8 @@ test('SPA shows branch pill and changes badge against sample-repo', async ({ pag
   await page.goto('/')
   // Branch picker label reads `main` (the sample-repo HEAD).
   await expect(page.locator('.branch-picker-label').first()).toHaveText('main')
-  // Changes badge appears because sample-repo has 1 staged + 1 unstaged + 1 untracked.
-  await expect(page.locator('.changes-badge-count').first()).toHaveText('3 changes')
+  // Changes badge appears because sample-repo has 1 staged + 2 unstaged + 1 untracked.
+  await expect(page.locator('.changes-badge-count').first()).toHaveText('4 changes')
 })
 
 test('on a mobile viewport, branch picker and changes badge are hidden from the toolbar (drawer-only)', async ({ page }) => {

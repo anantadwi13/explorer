@@ -67,7 +67,11 @@ export default function FileViewer({ path }: Props) {
     const updated = new URLSearchParams(searchParams)
     if (next === 'blame') updated.set('view', 'blame')
     else updated.delete('view')
-    setSearchParams(updated, { replace: false })
+    // `replace: true` so a Code ↔ Blame swap doesn't pile up history
+    // entries. The URL still carries `?view=blame` (so deep links and
+    // share-as-URL both work), but pressing Back skips past tab toggles
+    // and goes to wherever the user actually came from.
+    setSearchParams(updated, { replace: true })
   }
 
   // Loading: waiting on meta, or — for text/markdown — also on the /raw/ content fetch.
