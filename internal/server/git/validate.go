@@ -67,3 +67,19 @@ func ValidRef(s string) bool {
 	}
 	return true
 }
+
+// ValidRefWithCaret accepts the same grammar as ValidRef plus an optional
+// trailing sequence of `^` characters (each one walks one first-parent step
+// in ResolveRefWithCaret). Used by /raw/?ref=, /api/meta?ref=, and
+// /api/git/blame?ref= where the caret suffix is part of the documented
+// grammar.
+func ValidRefWithCaret(s string) bool {
+	base := s
+	for strings.HasSuffix(base, "^") {
+		base = strings.TrimSuffix(base, "^")
+	}
+	if base == "" {
+		return false
+	}
+	return ValidRef(base) || ValidSHA(base)
+}

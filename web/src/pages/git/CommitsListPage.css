@@ -8,16 +8,25 @@
   margin: 0 0 1rem 0;
   font-size: 1.25rem;
   font-weight: 600;
+  /* SHAs and long branch names have no natural break opportunities, so a 40-
+     char ref would otherwise push past narrow viewports. `overflow-wrap:
+     anywhere` lets the browser break mid-string only when needed; short refs
+     still render on a single line. */
+  overflow-wrap: anywhere;
 }
 
 .commits-ref {
   font-weight: 400;
   color: var(--fg-muted);
   font-size: 0.95em;
+  overflow-wrap: anywhere;
 }
 
 .commits-empty {
   color: var(--fg-muted);
+  /* Long paths inside `<code>{path}</code>` would otherwise overflow on mobile;
+     allow mid-string breaks for the path body. */
+  overflow-wrap: anywhere;
 }
 
 .commits-filter-banner {
@@ -34,6 +43,16 @@
   border-radius: var(--radius);
   background: var(--bg-panel);
   font-size: 0.9rem;
+  /* Long paths or branch names have no natural break opportunities — without
+     this they push the "× clear" button off-screen on mobile. The first child
+     is allowed to shrink, and inner text wraps mid-string when necessary. */
+  flex-wrap: wrap;
+}
+
+.commits-filter-banner > span {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
 }
 
 .commits-filter-path {
@@ -42,6 +61,7 @@
   padding: 0 0.35em;
   border-radius: 3px;
   font-size: 0.85em;
+  overflow-wrap: anywhere;
 }
 
 .commits-filter-clear {

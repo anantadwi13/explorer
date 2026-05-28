@@ -1,4 +1,4 @@
-import { useParams, useLocation, useOutletContext } from 'react-router-dom'
+import { useParams, useLocation, useOutletContext, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import * as api from '../api/client'
 import FolderListing from '../components/FolderListing'
@@ -47,5 +47,14 @@ export default function ViewPage() {
   }
 
   if (kind === 'folder') return <FolderListing key={path} path={path} />
-  return <FileViewer key={path} path={path} />
+  return <FileViewerWithRef key={path} path={path} />
+}
+
+// Thin wrapper that reads `?ref=` from the URL and threads it to FileViewer.
+// Kept here (rather than inside FileViewer) so the file viewer's prop surface
+// is explicit and easy to test without a Router context.
+function FileViewerWithRef({ path }: { path: string }) {
+  const [searchParams] = useSearchParams()
+  const ref = searchParams.get('ref') ?? undefined
+  return <FileViewer path={path} pinnedRef={ref} />
 }

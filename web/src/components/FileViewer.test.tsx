@@ -10,10 +10,18 @@ import FileViewer from './FileViewer'
 // `meta` is exercised directly by FileViewer; the others are hit by the
 // child surfaces (FileLastCommitStrip, BlameView) that FileViewer mounts and
 // need a benign default so the component tree settles during render.
-const metaMock = vi.fn<(path: string) => Promise<ApiResult<MetaResponse>>>()
+const metaMock = vi.fn<(path: string, ref?: string) => Promise<ApiResult<MetaResponse>>>()
 vi.mock('../api/client', () => ({
   INLINE_CAP: 5 * 1024 * 1024,
-  meta: (path: string) => metaMock(path),
+  meta: (path: string, ref?: string) => metaMock(path, ref),
+  // rawUrl is used by FileViewer for <img src>, download href, and the /raw/
+  // fetch URL. Mirror the real implementation so tests can assert on the
+  // generated URLs (including the `?ref=` propagation in pinned mode).
+  rawUrl: (path: string, ref?: string) => {
+    const base = '/raw/' + encodeURI(path)
+    if (!ref) return base
+    return base + '?ref=' + encodeURIComponent(ref)
+  },
   getGitInfo: vi.fn().mockResolvedValue({
     ok: true,
     data: { is_repo: false },
@@ -25,6 +33,27 @@ vi.mock('../api/client', () => ({
   getGitCommits: vi.fn().mockResolvedValue({
     ok: true,
     data: { commits: [], next_cursor: null },
+  }),
+  getGitCommit: vi.fn().mockResolvedValue({
+    ok: true,
+    data: {
+      sha: '',
+      short_sha: '',
+      author_name: '',
+      author_email: '',
+      author_time: '',
+      committer_name: '',
+      committer_email: '',
+      committer_time: '',
+      subject: '',
+      body: '',
+      parents: [],
+      total_files: 0,
+      total_additions: 0,
+      total_deletions: 0,
+      files: [],
+      next_file_offset: null,
+    },
   }),
   getGitBlame: vi.fn().mockResolvedValue({
     ok: true,
@@ -523,6 +552,112 @@ describe('FileViewer content-area container class', () => {
       if (!container.querySelector('img')) throw new Error('not ready')
     })
     expect(container.querySelector('.vw.vw-image')).not.toBeNull()
+  })
+})
+
+// --- Pinned mode (?ref=) ---
+
+function renderPinnedViewer(path: string, pinnedRef: string, viewParam?: string) {
+  const layoutValue = {
+    search: '',
+    setSearch: () => {},
+    searchRef: createRef<HTMLInputElement>(),
+    isFileRoute: true,
+    showToast: () => {},
+    closeSidebar: () => {},
+  }
+  const qs = new URLSearchParams()
+  if (viewParam) qs.set('view', viewParam)
+  qs.set('ref', pinnedRef)
+  const url = `/view/${path}?${qs.toString()}`
+  function LocationProbe() {
+    const loc = useLocation()
+    return <div data-testid="location" data-search={loc.search} />
+  }
+  return render(
+    <MemoryRouter initialEntries={[url]}>
+      <LayoutContext.Provider value={layoutValue}>
+        <FileViewer path={path} pinnedRef={pinnedRef} />
+        <LocationProbe />
+      </LayoutContext.Provider>
+    </MemoryRouter>,
+  )
+}
+
+describe('FileViewer pinned mode (?ref=)', () => {
+  const pinnedSHA = 'a'.repeat(40)
+
+  it('threads ref to api.meta() and rawUrl()', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 12, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hello world\n'))
+
+    const { container } = renderPinnedViewer('main.go', pinnedSHA, 'code')
+
+    await waitFor(() => {
+      if (!container.querySelector('pre.code-block')) throw new Error('not ready')
+    })
+    // meta was called with the pinned ref
+    expect(metaMock).toHaveBeenCalledWith('main.go', pinnedSHA)
+    // /raw/ fetch URL includes ref=
+    const fetchedUrl = String(fetchMock.mock.calls[0][0])
+    expect(fetchedUrl).toBe('/raw/main.go?ref=' + pinnedSHA)
+  })
+
+  it('image src includes ?ref= in pinned mode', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 100, mtime: '', mime: 'image/png', kind: 'image' }))
+
+    const { container } = renderPinnedViewer('logo.png', pinnedSHA)
+    await waitFor(() => {
+      if (!container.querySelector('img')) throw new Error('not ready')
+    })
+    const img = container.querySelector('img') as HTMLImageElement
+    // jsdom resolves relative URLs against the test base. Compare the raw
+    // attribute value instead of `.src`.
+    expect(img.getAttribute('src')).toBe('/raw/logo.png?ref=' + pinnedSHA)
+  })
+
+  it('download link includes ?ref= in pinned mode', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 12, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hello\n'))
+
+    const { container } = renderPinnedViewer('main.go', pinnedSHA, 'code')
+    await waitFor(() => {
+      if (!container.querySelector('a[download]')) throw new Error('not ready')
+    })
+    const download = container.querySelector('a[download]') as HTMLAnchorElement
+    expect(download.getAttribute('href')).toBe('/raw/main.go?ref=' + pinnedSHA)
+  })
+
+  it('renders the unknown_ref error state in the content area (pinned indicator lives on the strip, covered separately)', async () => {
+    metaMock.mockResolvedValue({
+      ok: false,
+      status: 404,
+      error: { error: 'unknown_ref', message: 'unknown ref' },
+    })
+
+    const { container } = renderPinnedViewer('main.go', 'zzz', 'code')
+    await waitFor(() => {
+      if (!container.querySelector('.vw-fallback')) throw new Error('not ready')
+    })
+    expect(container.querySelector('.vw-fallback')!.textContent).toContain('Unknown Commit')
+  })
+
+  it('file head stays clean in pinned mode (no Viewing-at pill, no Back-to-working-tree button)', async () => {
+    metaMock.mockResolvedValue(okMeta({ size: 12, mtime: '', mime: 'text/plain', kind: 'text' }))
+    fetchMock.mockResolvedValue(rawResponse('hello\n'))
+
+    const { container } = renderPinnedViewer('main.go', pinnedSHA, 'code')
+    await waitFor(() => {
+      if (!container.querySelector('pre.code-block')) throw new Error('not ready')
+    })
+    // Per the user-requested placement decision: the pinned indicator and
+    // its escape affordance live on the file-last-commit strip (covered by
+    // FileLastCommitStrip.test.tsx). The file head stays clean.
+    expect(container.querySelector('.file-head-pinned')).toBeNull()
+    expect(container.querySelector('.file-head-pinned-pill')).toBeNull()
+    expect(container.querySelector('.file-head-pinned-back')).toBeNull()
+    // No back-to-working-tree button in the head's actions either.
+    expect(container.querySelector('.file-head-actions [aria-label="Back to working tree"]')).toBeNull()
   })
 })
 

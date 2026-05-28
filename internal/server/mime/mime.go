@@ -103,6 +103,25 @@ func Detect(absPath string) string {
 	return sniff(absPath)
 }
 
+// DetectFromBytes returns the MIME type for `name` (used for the extension
+// lookup) with `content` as the byte source for fallback sniffing. Used by
+// callers that already hold the bytes in memory (e.g. /raw/?ref= and
+// /api/meta?ref= reading from a git blob).
+func DetectFromBytes(name string, content []byte) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if mt, ok := extTable[ext]; ok {
+		return mt
+	}
+	if len(content) == 0 {
+		return "application/octet-stream"
+	}
+	n := len(content)
+	if n > 512 {
+		n = 512
+	}
+	return http.DetectContentType(content[:n])
+}
+
 // DetectByExt returns the MIME type for the given extension (e.g. ".png").
 // Returns "" if unknown.
 func DetectByExt(ext string) string {

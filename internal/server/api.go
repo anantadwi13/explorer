@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	gitpkg "github.com/anantadwi13/explorer/internal/server/git"
 	"github.com/anantadwi13/explorer/internal/server/mime"
 )
 
@@ -108,8 +110,15 @@ type metaResponse struct {
 }
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
-	reqPath := r.URL.Query().Get("path")
+	q := r.URL.Query()
+	reqPath := q.Get("path")
 	reqPath = strings.TrimPrefix(reqPath, "/")
+	ref := q.Get("ref")
+
+	if ref != "" {
+		s.handleMetaAtRef(w, reqPath, ref)
+		return
+	}
 
 	res, err := s.resolver.Resolve(reqPath)
 	if err != nil {
@@ -129,6 +138,49 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		Mime:  mimeType,
 		Kind:  fileKind(mimeType),
 	})
+}
+
+// handleMetaAtRef serves /api/meta?path=<p>&ref=<r> using git-tree containment
+// instead of the filesystem path-resolver. The mode is structurally bounded:
+// the path either exists in the named commit's tree or it does not, with no
+// `..` traversal surface (see the path-resolver capability's two-mode
+// containment requirement).
+func (s *Server) handleMetaAtRef(w http.ResponseWriter, path, ref string) {
+	if !gitpkg.ValidRefWithCaret(ref) {
+		writeError(w, errKindUnknownRef, "unknown ref", http.StatusNotFound)
+		return
+	}
+	repo, err := gitpkg.Open(s.root)
+	if err != nil {
+		writeError(w, errKindUnknownRef, "unknown ref", http.StatusNotFound)
+		return
+	}
+	content, mimeType, size, when, err := repo.BlobAt(ref, path)
+	if err != nil {
+		writeRefBlobError(w, err)
+		return
+	}
+	_ = content // not returned by /api/meta
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(metaResponse{
+		Size:  size,
+		Mtime: when,
+		Mime:  mimeType,
+		Kind:  fileKind(mimeType),
+	})
+}
+
+// writeRefBlobError maps git package errors from BlobAt to typed HTTP
+// responses for the /raw/?ref= and /api/meta?ref= surfaces.
+func writeRefBlobError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, gitpkg.ErrUnknownRef), errors.Is(err, gitpkg.ErrNotARepo):
+		writeError(w, errKindUnknownRef, "unknown ref", http.StatusNotFound)
+	case errors.Is(err, gitpkg.ErrNotFound):
+		writeError(w, errKindNotFound, "not found", http.StatusNotFound)
+	default:
+		writeError(w, errKindInternal, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // fileKind classifies a MIME type into one of: "markdown", "text", "image", or "".

@@ -9,6 +9,7 @@ vi.mock('../api/client', () => ({
   getGitInfo: vi.fn(),
   getGitStatus: vi.fn(),
   getGitCommits: vi.fn(),
+  getGitCommit: vi.fn(),
 }))
 
 function renderStrip(path: string, entry = '/view/' + path) {
@@ -133,5 +134,93 @@ describe('FileLastCommitStrip', () => {
     renderStrip('a.go', '/view/a.go?ref=feature%2Fx')
     const history = await screen.findByRole('link', { name: /history/i })
     expect(history.getAttribute('href')).toBe('/git/commits?path=a.go&ref=feature%2Fx')
+  })
+})
+
+// --- Pinned variant ---
+
+function renderPinnedStrip(path: string, pinnedRef: string) {
+  return render(
+    <MemoryRouter initialEntries={[`/view/${path}?ref=${pinnedRef}`]}>
+      <GitInfoProvider>
+        <FileLastCommitStrip path={path} pinnedRef={pinnedRef} />
+      </GitInfoProvider>
+    </MemoryRouter>,
+  )
+}
+
+const pinnedSHA = 'd'.repeat(40)
+
+const pinnedCommitDetail = {
+  sha: pinnedSHA,
+  short_sha: pinnedSHA.slice(0, 7),
+  author_name: 'Bob',
+  author_email: 'b@example.com',
+  author_time: '2025-06-01T12:00:00Z',
+  committer_name: 'Bob',
+  committer_email: 'b@example.com',
+  committer_time: '2025-06-01T12:00:00Z',
+  subject: 'feat: add pinned variant',
+  body: '',
+  parents: [],
+  total_files: 0,
+  total_additions: 0,
+  total_deletions: 0,
+  files: [],
+  next_file_offset: null,
+}
+
+describe('FileLastCommitStrip pinned variant', () => {
+  it('fetches the pinned commit via /api/git/commit?sha= rather than /api/git/commits', async () => {
+    vi.mocked(api.getGitCommit).mockResolvedValue({ ok: true, data: pinnedCommitDetail })
+
+    renderPinnedStrip('src/x.go', pinnedSHA)
+    await screen.findByText('feat: add pinned variant')
+
+    expect(api.getGitCommit).toHaveBeenCalledWith({ sha: pinnedSHA, fileLimit: 1 })
+    // The working-tree path-scoped commits lookup must NOT fire in pinned mode.
+    expect(api.getGitCommits).not.toHaveBeenCalled()
+  })
+
+  it('renders the Viewing-at pill and suppresses Modified-locally / Untracked pills', async () => {
+    vi.mocked(api.getGitCommit).mockResolvedValue({ ok: true, data: pinnedCommitDetail })
+    // Status reports the file as locally modified — in working-tree mode this
+    // would render the Modified-locally pill, but pinned mode must suppress it.
+    vi.mocked(api.getGitStatus).mockResolvedValue({
+      ok: true,
+      data: {
+        staged: [],
+        unstaged: [{ status: 'M', old_path: 'src/x.go', new_path: 'src/x.go', additions: 1, deletions: 0, is_binary: false }],
+        untracked: [],
+      },
+    })
+
+    const { container } = renderPinnedStrip('src/x.go', pinnedSHA)
+    await screen.findByText('feat: add pinned variant')
+
+    const pinnedPill = container.querySelector('.file-last-commit-pill.pill-pinned')
+    expect(pinnedPill).not.toBeNull()
+    expect(pinnedPill!.textContent).toContain('Viewing at ' + pinnedSHA.slice(0, 7))
+
+    expect(container.querySelector('.file-last-commit-pill.pill-modified')).toBeNull()
+    expect(container.querySelector('.file-last-commit-pill.pill-untracked')).toBeNull()
+  })
+
+  it('routes History with &ref=<full-sha>', async () => {
+    vi.mocked(api.getGitCommit).mockResolvedValue({ ok: true, data: pinnedCommitDetail })
+
+    renderPinnedStrip('src/x.go', pinnedSHA)
+    const history = await screen.findByRole('link', { name: /history/i })
+    expect(history.getAttribute('href')).toBe('/git/commits?path=src%2Fx.go&ref=' + pinnedSHA)
+  })
+
+  it('renders no escape button — the pinned pill is the only indicator', async () => {
+    vi.mocked(api.getGitCommit).mockResolvedValue({ ok: true, data: pinnedCommitDetail })
+
+    const { container } = renderPinnedStrip('src/x.go', pinnedSHA)
+    await screen.findByText('feat: add pinned variant')
+
+    expect(container.querySelector('.file-last-commit-back')).toBeNull()
+    expect(container.querySelector('[aria-label="Back to working tree"]')).toBeNull()
   })
 })

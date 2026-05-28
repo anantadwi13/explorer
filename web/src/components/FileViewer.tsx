@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import * as api from '../api/client'
-import { INLINE_CAP } from '../api/client'
+import { INLINE_CAP, rawUrl } from '../api/client'
 import type { MetaResponse, ApiError, TreeEntry } from '../api/types'
 import { useLayout } from './LayoutContext'
 import { useWrap } from '../hooks/useWrap'
@@ -18,6 +18,12 @@ import './FileViewer.css'
 
 interface Props {
   path: string
+  // Optional commit pin from `?ref=` on the URL. When set, the viewer fetches
+  // bytes and blame from that commit's tree instead of the working tree. The
+  // visible "Viewing at <short-sha>" indicator + escape affordance lives on
+  // the per-file last-commit strip (see FileLastCommitStrip), not in the
+  // file head — the head stays clean.
+  pinnedRef?: string
 }
 
 // The tablist's available tabs are derived from the file's preview kind.
@@ -75,7 +81,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export default function FileViewer({ path }: Props) {
+export default function FileViewer({ path, pinnedRef }: Props) {
   const [meta, setMeta] = useState<MetaResponse | null>(null)
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
@@ -111,7 +117,10 @@ export default function FileViewer({ path }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    api.meta(path).then((res) => {
+    setMeta(null)
+    setContent(null)
+    setError(null)
+    api.meta(path, pinnedRef).then((res) => {
       if (cancelled) return
       if (!res.ok) {
         setError(res.error)
@@ -133,7 +142,7 @@ export default function FileViewer({ path }: Props) {
         setError({ error: 'too_large', message: 'file exceeds inline preview size cap' })
         return
       }
-      fetch('/raw/' + encodeURI(path))
+      fetch(rawUrl(path, pinnedRef))
         .then(async (r) => {
           if (cancelled) return
           if (!r.ok) {
@@ -155,7 +164,7 @@ export default function FileViewer({ path }: Props) {
     return () => {
       cancelled = true
     }
-  }, [path])
+  }, [path, pinnedRef])
 
   const filename = path.split('/').pop() ?? path
 
@@ -198,13 +207,14 @@ export default function FileViewer({ path }: Props) {
           size={meta?.size ?? null}
           mtime={meta?.mtime ?? null}
           path={path}
+          pinnedRef={pinnedRef}
           icon={iconForFile(iconEntry)}
           onBack={goBack}
           onCopyLink={onCopyLink}
           showDownload={canDownload(error.error)}
         />
-        <FileLastCommitStrip path={path} />
-        <ErrorBody error={error} filename={filename} path={path} />
+        <FileLastCommitStrip path={path} pinnedRef={pinnedRef} />
+        <ErrorBody error={error} filename={filename} path={path} pinnedRef={pinnedRef} />
       </div>
     )
   }
@@ -224,6 +234,7 @@ export default function FileViewer({ path }: Props) {
         size={meta.size}
         mtime={meta.mtime}
         path={path}
+        pinnedRef={pinnedRef}
         icon={iconForFile(iconEntry)}
         onBack={goBack}
         onCopyLink={onCopyLink}
@@ -234,7 +245,7 @@ export default function FileViewer({ path }: Props) {
             : undefined
         }
       />
-      <FileLastCommitStrip path={path} />
+      <FileLastCommitStrip path={path} pinnedRef={pinnedRef} />
       {tabs.length > 0 && activeTab && (
         <FileViewerTabs tabs={tabs} active={activeTab} onChange={onTabChange} />
       )}
@@ -245,22 +256,22 @@ export default function FileViewer({ path }: Props) {
           stays bare here. */}
       <div className={`vw ${rendererClass(meta.kind, activeTab)}`}>
         {meta.kind === 'markdown' && activeTab === 'preview' && (
-          <MarkdownRenderer content={content!} currentPath={path} />
+          <MarkdownRenderer content={content!} currentPath={path} pinnedRef={pinnedRef} />
         )}
         {meta.kind === 'markdown' && activeTab === 'code' && (
           <CodeBlock code={content!} language={extToLanguage(path)} wrap={wrap} />
         )}
         {meta.kind === 'markdown' && activeTab === 'blame' && (
-          <BlameView path={path} wrap={wrap} />
+          <BlameView path={path} wrap={wrap} pinnedRef={pinnedRef} />
         )}
         {meta.kind === 'text' && activeTab === 'code' && (
           <CodeBlock code={content!} language={extToLanguage(path)} wrap={wrap} />
         )}
         {meta.kind === 'text' && activeTab === 'blame' && (
-          <BlameView path={path} wrap={wrap} />
+          <BlameView path={path} wrap={wrap} pinnedRef={pinnedRef} />
         )}
         {meta.kind === 'image' && (
-          <img src={`/raw/${path}`} alt={filename} />
+          <img src={rawUrl(path, pinnedRef)} alt={filename} />
         )}
       </div>
     </div>
@@ -273,6 +284,10 @@ interface HeadProps {
   size: number | null
   mtime: string | null
   path: string
+  // pinnedRef threads through to the download href so a pinned-mode download
+  // fetches the commit's bytes. The visible pinned indicator lives on the
+  // file-last-commit strip below, not in the head — keeps the head clean.
+  pinnedRef?: string
   icon: React.ReactNode
   onBack: () => void
   onCopyLink: () => void
@@ -286,6 +301,7 @@ function FileHead({
   size,
   mtime,
   path,
+  pinnedRef,
   icon,
   onBack,
   onCopyLink,
@@ -340,7 +356,7 @@ function FileHead({
         {showDownload && (
           <a
             className="btn btn-sm"
-            href={`/raw/${path}`}
+            href={rawUrl(path, pinnedRef)}
             download={filename}
             title="Download"
           >
@@ -356,16 +372,18 @@ function ErrorBody({
   error,
   filename,
   path,
+  pinnedRef,
 }: {
   error: ApiError
   filename: string
   path: string
+  pinnedRef?: string
 }) {
   if (error.error === 'too_large') {
     return (
       <div className="vw-fallback">
         <p>This file is too large to preview inline (over 5 MB).</p>
-        <a href={`/raw/${path}`} download={filename} className="btn">
+        <a href={rawUrl(path, pinnedRef)} download={filename} className="btn">
           <DownloadIcon /> Download
         </a>
       </div>
@@ -375,7 +393,7 @@ function ErrorBody({
     return (
       <div className="vw-fallback">
         <p>This file type cannot be previewed.</p>
-        <a href={`/raw/${path}`} download={filename} className="btn">
+        <a href={rawUrl(path, pinnedRef)} download={filename} className="btn">
           <DownloadIcon /> Download
         </a>
       </div>
@@ -385,7 +403,7 @@ function ErrorBody({
     return (
       <div className="vw-fallback">
         <p>This file contains binary data and cannot be previewed as text.</p>
-        <a href={`/raw/${path}`} download={filename} className="btn">
+        <a href={rawUrl(path, pinnedRef)} download={filename} className="btn">
           <DownloadIcon /> Download
         </a>
       </div>
@@ -409,6 +427,7 @@ function errorTitle(kind: string): string {
     case 'permission_denied': return 'Permission Denied'
     case 'outside_root': return 'Access Denied'
     case 'not_utf8': return 'Cannot Preview'
+    case 'unknown_ref': return 'Unknown Commit'
     default: return 'Error'
   }
 }

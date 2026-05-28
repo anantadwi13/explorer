@@ -172,9 +172,11 @@ func (r *Repo) loadPatchSides(source PatchSource, sha, path string) (from, to []
 }
 
 // loadCommitSides loads the from/to blob contents for a single file in a
-// specific commit (diffing against the commit's first parent).
+// specific commit (diffing against the commit's first parent). `sha` accepts
+// the same grammar as ResolveRefWithCaret — kept routed through that helper so
+// /api/git/patch and the new ref-scoped endpoints share one resolution path.
 func (r *Repo) loadCommitSides(sha, path string) ([]byte, []byte, bool, error) {
-	hash, err := r.resolveSHAPrefix(NormaliseSHA(sha))
+	hash, err := r.ResolveRefWithCaret(NormaliseSHA(sha))
 	if err != nil {
 		return nil, nil, false, err
 	}

@@ -54,6 +54,12 @@
 .file-last-commit-pill.pill-untracked .file-last-commit-pill-dot {
   color: var(--fg-muted);
 }
+/* "Viewing at <short-sha>" — pinned mode. Same shape as the working-tree
+   pills but uses the accent for the dot so it reads as informational state
+   rather than a "you have local changes" warning. */
+.file-last-commit-pill.pill-pinned .file-last-commit-pill-dot {
+  color: var(--fg-accent, var(--color-diff-add-fg));
+}
 
 .file-last-commit-body {
   display: flex;
@@ -149,3 +155,4 @@
   border-color: var(--fg-muted);
   text-decoration: none;
 }
+
