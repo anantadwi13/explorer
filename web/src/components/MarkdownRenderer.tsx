@@ -30,9 +30,14 @@ const syntaxSchema = {
 interface Props {
   content: string
   currentPath: string
+  // Optional commit pin. When set, relative <img src> and <a href> references
+  // inside the rendered markdown are rewritten to carry `?ref=<sha>` / `?ref=`
+  // so internal navigation stays pinned to the same commit. Absolute and
+  // external URLs are unchanged in either mode.
+  pinnedRef?: string
 }
 
-function makeRewritePlugin(currentPath: string): Plugin<[], Root> {
+function makeRewritePlugin(currentPath: string, pinnedRef?: string): Plugin<[], Root> {
   const currentDir = currentPath.includes('/')
     ? currentPath.substring(0, currentPath.lastIndexOf('/'))
     : ''
@@ -41,12 +46,21 @@ function makeRewritePlugin(currentPath: string): Plugin<[], Root> {
     return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(url) || url.startsWith('/')
   }
 
+  function appendRef(base: string): string {
+    if (!pinnedRef) return base
+    const sep = base.includes('?') ? '&' : '?'
+    const qs = new URLSearchParams()
+    qs.set('ref', pinnedRef)
+    return base + sep + qs.toString()
+  }
+
   function rewrite(url: string, type: 'raw' | 'view'): string {
     if (!url || isAbsolute(url)) return url
     // Strip leading ./ so paths like ./img.png become img.png before joining
     const clean = url.replace(/^\.\//, '')
     const resolved = currentDir ? `${currentDir}/${clean}` : clean
-    return type === 'raw' ? `/raw/${resolved}` : `/view/${resolved}`
+    const base = type === 'raw' ? `/raw/${resolved}` : `/view/${resolved}`
+    return appendRef(base)
   }
 
   return () => (tree: Root) => {
@@ -61,8 +75,8 @@ function makeRewritePlugin(currentPath: string): Plugin<[], Root> {
   }
 }
 
-export default function MarkdownRenderer({ content, currentPath }: Props) {
-  const rewritePlugin = makeRewritePlugin(currentPath)
+export default function MarkdownRenderer({ content, currentPath, pinnedRef }: Props) {
+  const rewritePlugin = makeRewritePlugin(currentPath, pinnedRef)
 
   return (
     <div className="md-body">

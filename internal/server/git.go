@@ -216,7 +216,7 @@ func (s *Server) handleGitBlame(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	ref := q.Get("ref")
-	if ref != "" && !gitpkg.ValidRef(ref) && !gitpkg.ValidSHA(ref) {
+	if ref != "" && !gitpkg.ValidRefWithCaret(ref) {
 		writeGitError(w, gitpkg.ErrUnknownRef)
 		return
 	}

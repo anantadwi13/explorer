@@ -61,3 +61,54 @@ describe('MarkdownRenderer — syntax highlighting', () => {
     expect(spans.length).toBe(0)
   })
 })
+
+describe('MarkdownRenderer — relative link rewriting (pinned mode)', () => {
+  const pinnedSHA = 'a'.repeat(40)
+
+  it('relative <img> in pinned mode emits /raw/<resolved>?ref=<sha>', () => {
+    const md = '![diagram](./diagram.png)'
+    const { container } = render(
+      <MarkdownRenderer content={md} currentPath="docs/api.md" pinnedRef={pinnedSHA} />,
+    )
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img!.getAttribute('src')).toBe('/raw/docs/diagram.png?ref=' + pinnedSHA)
+  })
+
+  it('relative <a href> in pinned mode emits /view/<resolved>?ref=<sha>', () => {
+    const md = '[API](./api.md)'
+    const { container } = render(
+      <MarkdownRenderer content={md} currentPath="docs/index.md" pinnedRef={pinnedSHA} />,
+    )
+    const a = container.querySelector('a')
+    expect(a).not.toBeNull()
+    expect(a!.getAttribute('href')).toBe('/view/docs/api.md?ref=' + pinnedSHA)
+  })
+
+  it('absolute https URLs are unchanged in pinned mode', () => {
+    const md = '[external](https://example.com/page)'
+    const { container } = render(
+      <MarkdownRenderer content={md} currentPath="docs/index.md" pinnedRef={pinnedSHA} />,
+    )
+    const a = container.querySelector('a')
+    expect(a!.getAttribute('href')).toBe('https://example.com/page')
+  })
+
+  it('absolute root-relative URLs are unchanged in pinned mode', () => {
+    const md = '![icon](/static/icon.png)'
+    const { container } = render(
+      <MarkdownRenderer content={md} currentPath="docs/index.md" pinnedRef={pinnedSHA} />,
+    )
+    const img = container.querySelector('img')
+    expect(img!.getAttribute('src')).toBe('/static/icon.png')
+  })
+
+  it('working-tree mode (no pinnedRef) does not append ref=', () => {
+    const md = '![diagram](./diagram.png)\n\n[API](./api.md)'
+    const { container } = render(
+      <MarkdownRenderer content={md} currentPath="docs/index.md" />,
+    )
+    expect(container.querySelector('img')!.getAttribute('src')).toBe('/raw/docs/diagram.png')
+    expect(container.querySelector('a')!.getAttribute('href')).toBe('/view/docs/api.md')
+  })
+})

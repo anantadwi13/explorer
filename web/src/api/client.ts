@@ -49,9 +49,23 @@ export function tree(path: string): Promise<ApiResult<TreeResponse>> {
   return apiGet<TreeResponse>(`/api/tree?path=${encoded}`)
 }
 
-export function meta(path: string): Promise<ApiResult<MetaResponse>> {
-  const encoded = encodeURIComponent(path)
-  return apiGet<MetaResponse>(`/api/meta?path=${encoded}`)
+export function meta(path: string, ref?: string): Promise<ApiResult<MetaResponse>> {
+  const qs = new URLSearchParams()
+  qs.set('path', path)
+  if (ref) qs.set('ref', ref)
+  return apiGet<MetaResponse>('/api/meta?' + qs.toString())
+}
+
+// rawUrl builds the `/raw/<path>[?ref=…]` URL used by <img>, download links,
+// and the file viewer's content fetch. Centralised so the `?ref=` propagation
+// happens in one place — call sites just thread the optional `ref` argument
+// to keep pinned-mode bytes wired through.
+export function rawUrl(path: string, ref?: string): string {
+  const base = '/raw/' + encodeURI(path)
+  if (!ref) return base
+  const qs = new URLSearchParams()
+  qs.set('ref', ref)
+  return base + '?' + qs.toString()
 }
 
 // --- git-reader helpers ---

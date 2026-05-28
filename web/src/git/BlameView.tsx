@@ -25,10 +25,14 @@ function isPendingChunk(c: RenderChunk): c is PendingChunk {
 
 // Stale-while-revalidate state for /api/git/blame, keyed by `path::ref`.
 //
-//   • `blameCache`  — last-known-good results. Synchronously consulted on
-//     mount, so a Code ↔ Blame tab swap renders the previously-fetched
-//     chunks immediately (no "Computing blame…" flash, no re-pay of go-
-//     git's multi-second walk).
+//   • `blameCache`  — last-known-good results, bounded to 32 entries via an
+//     LRU. Synchronously consulted on mount, so a Code ↔ Blame tab swap
+//     renders the previously-fetched chunks immediately (no "Computing
+//     blame…" flash, no re-pay of go-git's multi-second walk). Working-
+//     tree (`ref===""`) and pinned (`ref=<sha>`) entries share the same
+//     LRU — no separate bucket. The cap exists because pinned-mode
+//     browsing through a commit's renamed files can otherwise accumulate
+//     one entry per visited `(path, ref)` pair for the tab's lifetime.
 //   • `inFlight`    — promises for requests that haven't settled yet. A
 //     remount that lands while the originating fetch is still pending
 //     awaits the SAME promise instead of firing a duplicate. This keeps
@@ -40,12 +44,37 @@ function isPendingChunk(c: RenderChunk): c is PendingChunk {
 //
 // Cache invariants:
 //   • In-memory only, lives as long as the SPA tab is open.
-//   • Never auto-evicted — typical file count per session is small and the
-//     payload is a few KB per file.
+//   • LRU-evicted at 32 entries; on read, the entry is promoted to MRU.
 //   • Errors do NOT poison the cache: if a background fetch fails and we
 //     have a cached entry, the cached entry stays and is shown. If the
 //     fetch fails with no cache entry, the error placeholder renders.
+const BLAME_CACHE_MAX = 32
 const blameCache = new Map<string, BlameResponse>()
+
+// blameCacheGet reads an entry and, on hit, promotes it to MRU position by
+// deleting + re-inserting (Map iteration order tracks insertion order in JS,
+// so a re-insert puts the entry at the end → it's the last evicted).
+function blameCacheGet(key: string): BlameResponse | undefined {
+  const v = blameCache.get(key)
+  if (v === undefined) return undefined
+  blameCache.delete(key)
+  blameCache.set(key, v)
+  return v
+}
+
+// blameCachePut stores an entry and evicts the LRU (the oldest insertion-
+// order entry) once the cap is exceeded. A re-set of an existing key counts
+// as a fresh insertion.
+function blameCachePut(key: string, value: BlameResponse): void {
+  if (blameCache.has(key)) blameCache.delete(key)
+  blameCache.set(key, value)
+  while (blameCache.size > BLAME_CACHE_MAX) {
+    const oldest = blameCache.keys().next().value
+    if (oldest === undefined) break
+    blameCache.delete(oldest)
+  }
+}
+
 type BlameApiResult = Awaited<ReturnType<typeof api.getGitBlame>>
 const inFlight = new Map<string, Promise<BlameApiResult>>()
 
@@ -63,7 +92,7 @@ function fetchBlame(path: string, ref: string | undefined): Promise<BlameApiResu
   const existing = inFlight.get(key)
   if (existing) return existing
   const p = api.getGitBlame({ path, ref }).then((res) => {
-    if (res.ok) blameCache.set(key, res.data)
+    if (res.ok) blameCachePut(key, res.data)
     return res
   }).finally(() => {
     // Clear *after* the cache write so a remount that arrives in the
@@ -85,11 +114,21 @@ export function __resetBlameCacheForTests(): void {
   inFlight.clear()
 }
 
+// __blameCacheKeysForTests returns the current cache's keys in insertion
+// (oldest→newest) order. Used by the LRU eviction test to assert eviction
+// behaviour without needing to time-slice promises across remounts.
+export function __blameCacheKeysForTests(): string[] {
+  return Array.from(blameCache.keys())
+}
+
 interface Props {
   path: string
   // Optional explicit ref — pulled from the existing branch-picker state via
-  // `?ref=` on the route. Absent → HEAD (the server defaults).
-  ref?: string
+  // `?ref=` on the route, OR set explicitly by the file viewer when it is in
+  // pinned mode (the URL's `?ref=` is the source of truth for both — pinned
+  // mode just makes the dependency explicit at the call site). Absent → HEAD
+  // (the server defaults).
+  pinnedRef?: string
   // Shared wrap preference from the file viewer's existing `useWrap` hook.
   // When false, lines scroll horizontally inside the code cell and the
   // line-number gutter (plus, on desktop, the metadata column) stay sticky
@@ -107,17 +146,19 @@ interface Props {
 // breakpoint. Per-line syntax highlighting reuses the shared lowlight
 // instance + extToLanguage helper, matching the diff renderer's
 // per-line-approximation pattern.
-export default function BlameView({ path, ref, wrap = true }: Props) {
+export default function BlameView({ path, pinnedRef, wrap = true }: Props) {
   const [params] = useSearchParams()
-  // Per design Decision 7, the route doesn't carry blame state — only the
-  // active branch-picker ref. Honour it when the caller didn't override.
-  const resolvedRef = ref ?? params.get('ref') ?? undefined
+  // The route's `?ref=` is the single source of truth for which commit blame
+  // walks back from — file-viewer pinned mode reads it once at the page level
+  // and threads it down as `pinnedRef`, but standalone BlameView mounts (e.g.
+  // tests) can also pick it up from `useSearchParams` directly.
+  const resolvedRef = pinnedRef ?? params.get('ref') ?? undefined
 
   // Seed blame state from the cache synchronously on mount so a re-open of
   // the Blame tab paints the previous chunks immediately. lazy-init form of
   // useState — runs once per (path, ref) combination, not on every render.
   const [blame, setBlame] = useState<BlameResponse | null>(
-    () => blameCache.get(cacheKey(path, resolvedRef)) ?? null,
+    () => blameCacheGet(cacheKey(path, resolvedRef)) ?? null,
   )
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
@@ -141,7 +182,7 @@ export default function BlameView({ path, ref, wrap = true }: Props) {
   useEffect(() => {
     let cancelled = false
     const key = cacheKey(path, resolvedRef)
-    const cached = blameCache.get(key) ?? null
+    const cached = blameCacheGet(key) ?? null
     // Reset to cached value (or null) so switching paths doesn't bleed the
     // previous file's chunks into the new file's view.
     setBlame(cached)
@@ -153,7 +194,7 @@ export default function BlameView({ path, ref, wrap = true }: Props) {
     // "Refetching" status is shown only on warm mounts — on a cold mount the
     // chunk-level "Computing blame…" placeholder already conveys progress.
     setRefetching(cached !== null)
-    fetch('/raw/' + encodeURI(path))
+    fetch(api.rawUrl(path, resolvedRef))
       .then(async (r) => {
         if (cancelled) return
         if (!r.ok) {
@@ -212,18 +253,25 @@ export default function BlameView({ path, ref, wrap = true }: Props) {
   const totalLines = blame ? blame.total_lines : allLines.length
   const gutterDigits = String(Math.max(1, totalLines)).length
 
-  // The status bar groups the two "what's happening to this view" pills:
-  // a Modified-locally indicator from the response itself, and a Refetching
-  // indicator owned by this component while a background SWR call runs.
-  // Rendered only when at least one pill applies, so a clean fully-loaded
-  // view doesn't grow an empty header row.
-  const showStatusBar = blame?.dirty || refetching
+  // The status bar groups two "what's happening to this view" pills:
+  //   • Modified-locally — working-tree mode only. The blame response sets
+  //     `dirty: true` only on the working-tree branch; the SPA also guards
+  //     defensively against any pinned-mode response with `dirty: true` (the
+  //     spec is a UI contract: pinned mode SHALL NOT render this pill).
+  //   • Refetching blame… — SWR background refresh in progress with cached
+  //     chunks visible.
+  // No pinned-state indicator is rendered here — the per-file last-commit
+  // strip above the tablist already carries the `Viewing at <short-sha>` pill
+  // in pinned mode, and duplicating it inside the Blame view would be
+  // redundant. Rendered only when at least one pill applies.
+  const showDirtyPill = !!blame?.dirty && !resolvedRef
+  const showStatusBar = showDirtyPill || refetching
 
   return (
     <div className={`blame-view ${wrap ? 'wrap-on' : 'wrap-off'}`}>
       {showStatusBar && (
         <div className="blame-dirty-banner" role="status" aria-live="polite">
-          {blame?.dirty && (
+          {showDirtyPill && (
             <span className="blame-pill pill-modified">
               <span className="blame-pill-dot" aria-hidden="true">●</span>
               Modified locally

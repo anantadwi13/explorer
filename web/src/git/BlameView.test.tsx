@@ -1,11 +1,19 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import BlameView, { __resetBlameCacheForTests } from './BlameView'
+import BlameView, { __resetBlameCacheForTests, __blameCacheKeysForTests } from './BlameView'
 import * as api from '../api/client'
 
 vi.mock('../api/client', () => ({
   getGitBlame: vi.fn(),
+  // BlameView fetches /raw/ through the shared client helper so the URL
+  // construction (incl. `?ref=<sha>`) is centralised. Tests can stub the
+  // global `fetch` mock without caring about the exact URL shape.
+  rawUrl: (path: string, ref?: string) => {
+    const base = '/raw/' + encodeURI(path)
+    if (!ref) return base
+    return base + '?ref=' + encodeURIComponent(ref)
+  },
 }))
 
 // Stub global fetch (BlameView fetches /raw/<path> alongside /api/git/blame).
@@ -347,5 +355,136 @@ describe('BlameView', () => {
     // No `.hljs` class on any line-text span when the grammar is missing.
     const hljs = container.querySelectorAll('.blame-line-text.hljs')
     expect(hljs.length).toBe(0)
+  })
+})
+
+// --- Pinned mode + LRU eviction ---
+
+function renderPinned(path: string, pinnedRef: string) {
+  return render(
+    <MemoryRouter initialEntries={['/view/' + path + '?ref=' + pinnedRef]}>
+      <BlameView path={path} pinnedRef={pinnedRef} />
+    </MemoryRouter>,
+  )
+}
+
+describe('BlameView pinned mode', () => {
+  const pinnedSHA = 'b'.repeat(40)
+
+  it('threads pinnedRef to getGitBlame and the /raw/ fetch', async () => {
+    vi.mocked(api.getGitBlame).mockResolvedValue({
+      ok: true,
+      data: { ...sampleBlame, ref: pinnedSHA, sha: pinnedSHA, dirty: false },
+    })
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+
+    renderPinned('main.go', pinnedSHA)
+    await screen.findByText('initial scaffold')
+
+    expect(api.getGitBlame).toHaveBeenCalledWith({ path: 'main.go', ref: pinnedSHA })
+    const fetchedUrl = String(fetchMock.mock.calls[0][0])
+    expect(fetchedUrl).toBe('/raw/main.go?ref=' + pinnedSHA)
+  })
+
+  it('renders no pinned-state pill and suppresses the Modified-locally pill', async () => {
+    vi.mocked(api.getGitBlame).mockResolvedValue({
+      ok: true,
+      // Even if the server somehow returned dirty:true in pinned mode (it
+      // shouldn't), the SPA must not render the working-tree pill.
+      data: { ...sampleBlame, ref: pinnedSHA, sha: pinnedSHA, dirty: true },
+    })
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+
+    const { container } = renderPinned('main.go', pinnedSHA)
+    await screen.findByText('initial scaffold')
+
+    // BlameView no longer renders its own pinned-state pill — the per-file
+    // last-commit strip above the tablist is the sole indicator.
+    expect(container.querySelector('.blame-pill.pill-pinned')).toBeNull()
+    expect(container.querySelector('.blame-pill.pill-modified')).toBeNull()
+  })
+})
+
+describe('BlameView LRU cache', () => {
+  it('keys cache entries by (path, ref) and evicts LRU at 32 entries', async () => {
+    vi.mocked(api.getGitBlame).mockImplementation(async ({ path, ref }) => ({
+      ok: true as const,
+      data: { ...sampleBlame, path, ref: ref ?? 'HEAD', sha: 'a'.repeat(40) },
+    }))
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+
+    // Mount 33 distinct (path, ref) entries. The cache caps at 32, so the
+    // oldest (f0::pin0) should be evicted by the time the 33rd lands.
+    for (let i = 0; i < 33; i++) {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/view/f' + i]}>
+          <BlameView path={'f' + i} pinnedRef={'pin' + i} />
+        </MemoryRouter>,
+      )
+      await screen.findByText('initial scaffold')
+      unmount()
+    }
+
+    const keys = __blameCacheKeysForTests()
+    expect(keys.length).toBe(32)
+    // Oldest entry was evicted; the next-oldest (f1::pin1) is now first.
+    expect(keys).not.toContain('f0::pin0')
+    expect(keys[0]).toBe('f1::pin1')
+    expect(keys[keys.length - 1]).toBe('f32::pin32')
+  })
+
+  it('promotes entries to MRU on read so heavy use survives eviction', async () => {
+    vi.mocked(api.getGitBlame).mockImplementation(async ({ path, ref }) => ({
+      ok: true as const,
+      data: { ...sampleBlame, path, ref: ref ?? 'HEAD', sha: 'a'.repeat(40) },
+    }))
+    fetchMock.mockResolvedValue(rawResponse(fileContent))
+
+    // Insert 32 entries — the cache is exactly at capacity.
+    for (let i = 0; i < 32; i++) {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/view/g' + i]}>
+          <BlameView path={'g' + i} pinnedRef={'pin' + i} />
+        </MemoryRouter>,
+      )
+      await screen.findByText('initial scaffold')
+      unmount()
+    }
+    // At this point keys[0] should be g0::pin0 (oldest), keys[31] g31::pin31.
+    expect(__blameCacheKeysForTests()[0]).toBe('g0::pin0')
+
+    // Touch g0 — promotes it to MRU. We do this via a direct remount; the
+    // synchronous cache-seed in useState calls blameCacheGet, which moves
+    // g0 to the end of the Map (MRU position).
+    {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/view/g0']}>
+          <BlameView path={'g0'} pinnedRef={'pin0'} />
+        </MemoryRouter>,
+      )
+      await screen.findByText('initial scaffold')
+      unmount()
+    }
+    // After promotion: g1 is now the oldest, g0 is at the end.
+    let after = __blameCacheKeysForTests()
+    expect(after[0]).toBe('g1::pin1')
+    expect(after[after.length - 1]).toBe('g0::pin0')
+
+    // Insert one more (g32). Since g0 is no longer the LRU (g1 is), g1
+    // should be evicted, not g0.
+    {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/view/g32']}>
+          <BlameView path={'g32'} pinnedRef={'pin32'} />
+        </MemoryRouter>,
+      )
+      await screen.findByText('initial scaffold')
+      unmount()
+    }
+
+    after = __blameCacheKeysForTests()
+    expect(after).not.toContain('g1::pin1')
+    expect(after).toContain('g0::pin0')
+    expect(after).toContain('g32::pin32')
   })
 })

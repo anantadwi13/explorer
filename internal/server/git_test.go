@@ -408,3 +408,259 @@ func TestGitInfo_AncestorDotGitDoesNotCount(t *testing.T) {
 		t.Errorf("ancestor .git should not satisfy the gate, got is_repo=%v", got["is_repo"])
 	}
 }
+
+// --- /api/meta?ref= and /raw/?ref= tests ---
+
+func TestMetaAtRef_FullSHA(t *testing.T) {
+	root, shas := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=README.md&ref="+shas[0], nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	json.NewDecoder(w.Body).Decode(&got)
+	// Commit 1's README.md is "v1\n" (3 bytes).
+	if int(got["size"].(float64)) != 3 {
+		t.Errorf("expected size=3 at first commit, got %v", got["size"])
+	}
+	if got["kind"] != "markdown" {
+		t.Errorf("expected kind=markdown, got %v", got["kind"])
+	}
+}
+
+func TestMetaAtRef_BranchName(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=README.md&ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	json.NewDecoder(w.Body).Decode(&got)
+	// main is at second commit — README.md is "v2\nmore\n" (8 bytes).
+	if int(got["size"].(float64)) != 8 {
+		t.Errorf("expected size=8 at main tip, got %v", got["size"])
+	}
+}
+
+func TestMetaAtRef_TagName(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=README.md&ref=v0.1.0", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestMetaAtRef_ParentViaCaret(t *testing.T) {
+	root, shas := makeRepoTestRoot(t)
+	srv := server.New(root)
+	// shas[1]^ → shas[0] → README.md is "v1\n" (3 bytes).
+	u := "/api/meta?path=README.md&ref=" + shas[1] + url.QueryEscape("^")
+	req := httptest.NewRequest(http.MethodGet, u, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got map[string]any
+	json.NewDecoder(w.Body).Decode(&got)
+	if int(got["size"].(float64)) != 3 {
+		t.Errorf("expected size=3 (parent commit), got %v", got["size"])
+	}
+}
+
+func TestMetaAtRef_UnknownRef(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=README.md&ref=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "unknown_ref")
+}
+
+func TestMetaAtRef_FileAbsentReturnsNotFound(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=missing.txt&ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	// Must be not_found (file not in tree), not unknown_ref (ref does resolve).
+	assertErrorKind(t, w.Body.String(), "not_found")
+}
+
+func TestMetaAtRef_PathEscapeReturnsNotFound(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=../../etc/passwd&ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	// In ref-scoped mode, a `..` path is just an absent tree entry — not_found,
+	// not outside_root.
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "not_found")
+}
+
+func TestMetaAtRef_NonRepoRootReturnsUnknownRef(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "hi\n")
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/api/meta?path=README.md&ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "unknown_ref")
+}
+
+func TestRawAtRef_FullSHA(t *testing.T) {
+	root, shas := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/raw/README.md?ref="+shas[0], nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "v1\n" {
+		t.Errorf("body %q, want %q", got, "v1\n")
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Errorf("expected text/markdown content-type, got %q", ct)
+	}
+	if w.Header().Get("Content-Disposition") != "" {
+		t.Error("/raw/?ref= must not set Content-Disposition")
+	}
+}
+
+func TestRawAtRef_BranchName(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/raw/README.md?ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got := w.Body.String(); got != "v2\nmore\n" {
+		t.Errorf("body %q, want %q", got, "v2\nmore\n")
+	}
+}
+
+func TestRawAtRef_ParentViaCaret(t *testing.T) {
+	root, shas := makeRepoTestRoot(t)
+	srv := server.New(root)
+	u := "/raw/README.md?ref=" + shas[1] + url.QueryEscape("^")
+	req := httptest.NewRequest(http.MethodGet, u, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := w.Body.String(); got != "v1\n" {
+		t.Errorf("body %q, want %q", got, "v1\n")
+	}
+}
+
+func TestRawAtRef_UnknownRef(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/raw/README.md?ref=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "unknown_ref")
+}
+
+func TestRawAtRef_FileAbsentReturnsNotFound(t *testing.T) {
+	root, _ := makeRepoTestRoot(t)
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/raw/missing.txt?ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "not_found")
+}
+
+// Note: a /raw/../etc/passwd?ref=… scenario is path-cleaned by net/http's
+// ServeMux before reaching the handler (returns 301 to the cleaned URL), so
+// the HTTP-layer path-escape test isn't exercisable through httptest. The
+// structural guarantee (ref-scoped requests can't escape the tree) is
+// covered at the BlobAt unit-test level — see TestBlobAt_PathEscapeStructurallyBounded.
+
+func TestRawAtRef_NonRepoRootReturnsUnknownRef(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "README.md", "hi\n")
+	srv := server.New(root)
+	req := httptest.NewRequest(http.MethodGet, "/raw/README.md?ref=main", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	assertErrorKind(t, w.Body.String(), "unknown_ref")
+}
+
+func TestBlameAtRef_CaretSuffix(t *testing.T) {
+	root, shas := makeRepoTestRoot(t)
+	srv := server.New(root)
+	u := "/api/git/blame?path=README.md&ref=" + shas[1] + url.QueryEscape("^")
+	req := httptest.NewRequest(http.MethodGet, u, nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		SHA    string                   `json:"sha"`
+		Dirty  bool                     `json:"dirty"`
+		Chunks []map[string]interface{} `json:"chunks"`
+	}
+	json.NewDecoder(w.Body).Decode(&got)
+	if got.SHA != shas[0] {
+		t.Errorf("expected blame at shas[0]=%s (parent of shas[1]), got %s", shas[0], got.SHA)
+	}
+	if got.Dirty {
+		t.Errorf("explicit-ref blame should have dirty=false")
+	}
+	for _, c := range got.Chunks {
+		if uc, _ := c["uncommitted"].(bool); uc {
+			t.Errorf("explicit-ref blame must not produce uncommitted chunks: %+v", c)
+		}
+	}
+}

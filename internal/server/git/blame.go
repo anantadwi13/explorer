@@ -109,7 +109,7 @@ func (r *Repo) Blame(res *resolver.Resolver, path, ref string, deadline time.Dur
 		}
 		target = headCommit
 	} else {
-		hash, err := r.resolveRefToCommit(ref)
+		hash, err := r.ResolveRefWithCaret(ref)
 		if err != nil {
 			return out, err
 		}
