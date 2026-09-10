@@ -205,11 +205,12 @@ export default function Layout() {
           </header>
         )}
 
-        <LayoutSidebar
-          isOpen={sidebarOpen || isDesktop}
-          isMobileDrawer={!isDesktop}
-          onClose={closeSidebar}
-        />
+          <LayoutSidebar
+           isOpen={sidebarOpen || isDesktop}
+           isMobileDrawer={!isDesktop}
+           onClose={closeSidebar}
+           activePath={currentPath(location.pathname)}
+          />
 
         {!isDesktop && sidebarOpen && (
           <div className="scrim" onClick={closeSidebar} aria-hidden="true" />

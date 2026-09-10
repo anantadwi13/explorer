@@ -7,9 +7,10 @@ interface Props {
   isOpen: boolean
   isMobileDrawer: boolean
   onClose: () => void
+  activePath: string
 }
 
-export function LayoutSidebar({ isOpen, isMobileDrawer, onClose }: Props) {
+export function LayoutSidebar({ isOpen, isMobileDrawer, onClose, activePath }: Props) {
   const className = `sidebar${isMobileDrawer && isOpen ? ' is-open' : ''}`
   return (
     <aside className={className} aria-label="File tree">
@@ -35,9 +36,9 @@ export function LayoutSidebar({ isOpen, isMobileDrawer, onClose }: Props) {
         </div>
       )}
       <div className="sidebar-section">Folders</div>
-      <div className="sidebar-tree">
-        <TreeSidebar />
-      </div>
+        <div className="sidebar-tree">
+          <TreeSidebar activePath={activePath} />
+        </div>
     </aside>
   )
 }
